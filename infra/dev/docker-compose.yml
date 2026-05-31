@@ -1,0 +1,37 @@
+services:
+  kafka:
+    image: redpandadata/redpanda:v24.2.4
+    restart: unless-stopped
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp
+      - "1"
+      - --memory
+      - "512M"
+      - --reserve-memory
+      - "0M"
+      - --node-id
+      - "0"
+      - --kafka-addr
+      - PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr
+      - PLAINTEXT://localhost:9092
+    ports:
+      - "9092:9092"
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: harticle
+      POSTGRES_PASSWORD: harticle
+      POSTGRES_DB: harticle
+    ports:
+      - "5433:5432"
+    volumes:
+      - harticle-pg:/var/lib/postgresql/data
+
+volumes:
+  harticle-pg:

@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package datakube;
+
+option java_package = "com.devozs.components.common.dto.infrastructure.settings";
+option java_outer_classname = "InfrastructureSettingsProtos";
+
+
+
+message KafkaConfigurationDto {
+    string url = 1;
+    string topic = 2;
+    string username = 3;
+    string password = 4;
+}

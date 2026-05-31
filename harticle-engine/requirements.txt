@@ -1,0 +1,36 @@
+requests~=2.28.1
+pip
+kafka-python-ng>=2.2.0
+protobuf~=3.19.0
+mypy-protobuf
+-e ./
+opencv-python~=4.6.0.66
+# matplotlib~=3.5.1
+# numpy==1.23.3
+# pandas~=1.4.2
+# Pillow~=9.1.0
+# tensorflow~=2.9.1
+# tqdm~=4.64.0
+# torch~=1.12.1
+setuptools~=60.2.0
+# openai~=0.23.1
+#transformers==4.23.1
+transformers~=4.23.1
+tokenizers
+datasets~=2.6.1
+#numpy
+torch~=1.12.1
+evaluate~=0.3.0
+sklearn
+GPUtil~=1.4.0
+
+numpy~=1.23.4
+pandas~=1.5.1
+#tensorflow
+tqdm~=4.64.1
+numba~=0.56.3
+bs4
+lxml
+func_timeout
+google-search-results
+flask

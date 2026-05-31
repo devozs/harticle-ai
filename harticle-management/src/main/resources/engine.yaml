@@ -1,0 +1,26 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: harticle-engine
+spec:
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      name:  harticle-engine
+    spec:
+      imagePullSecrets:
+        - name: cr-secret
+      containers:
+        - name:  harticle-engine
+          imagePullPolicy: Always
+          image: ghcr.io/devozs/harticle-engine:canary
+          securityContext:
+            allowPrivilegeEscalation: true
+            runAsUser: 0
+          env:
+            - name: KUBE_JOB_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+      restartPolicy: Never
+  backoffLimit: 2

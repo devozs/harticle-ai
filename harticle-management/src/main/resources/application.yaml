@@ -1,0 +1,76 @@
+rsa:
+  private-key: classpath:certs/private.pem
+  public-key: classpath:certs/public.pem
+
+server:
+  max-http-request-header-size: 100000
+  servlet:
+    context-path: /api
+
+spring:
+  main:
+    allow-circular-references: true
+
+  flyway:
+    enabled: true
+    placeholders:
+      postgres_user: ${POSTGRES_USER:test}
+    ignore-ignored-migrations: true
+    baseline-on-migrate: true
+
+  datasource:
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 0
+      idle-timeout: 60000
+    url: ${POSTGRES_URL:jdbc:postgresql://postgresql:5432/harticle}
+    username: ${POSTGRES_USER:test}
+    password: ${POSTGRES_PASSWORD:test}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: update
+
+  kafka:
+    properties:
+      security:
+        protocol: SASL_PLAINTEXT
+      sasl:
+        mechanism: SCRAM-SHA-512
+        jaas:
+          config: ${KAFKA_CONFIG:org.apache.kafka.common.security.scram.ScramLoginModule required username="kafka-user" password="xNMMH9RRP7Eb";}
+    consumer:
+      bootstrap-servers: devozs-cluster-kafka-bootstrap.devozs.svc.cluster.local:9092
+      group-id: management_consumer_group
+      auto-offset-reset: earliest
+    producer:
+      bootstrap-servers: devozs-cluster-kafka-bootstrap.devozs.svc.cluster.local:9092
+    bootstrap-servers: devozs-cluster-kafka-bootstrap.devozs.svc.cluster.local:9092
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+values:
+  access_cookie: devozs_access
+
+api:
+  identity:
+    url: http://identity:8080
+  keycloak:
+    url: http://keycloak
+    username: admin
+    password: admin
+  harticle-engine:
+    url: http://harticle-engine.harticle.svc.cluster.local:5000
+
+presignedurl-expiration-in-hours: 12
+
+multi-tenant:
+  enable: true

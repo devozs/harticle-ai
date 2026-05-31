@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+package datakube;
+
+option java_package = "com.devozs.components.common.dto.datakubeservice";
+option java_outer_classname = "DataKubeServiceProtos";
+
+message DataKubeMessage {
+    enum ObjectType {
+        ADD_METADATA_MESSAGE = 0;
+        FINISH_JOB = 1;
+        SUBTASK_COMPLETED = 2;
+    }
+
+    string tenantId = 1;
+    string jobId = 2;
+    string securityIdentifier = 3;
+    ObjectType objectType = 4;
+    string userName = 5;
+    string articleId = 6;
+}
+
+message AddMetadataMessage {
+    map<string, string> map_field = 1;
+}
+
+message FinishJob {
+    enum Status {
+        SUCCESS = 0;
+        FAILED = 1;
+    }
+
+    enum ExceptionReason {
+        NONE = 0;
+        GENERAL = 1;
+        COMMUNICATION_ERROR = 2;
+    }
+
+    string exception = 1;
+    ExceptionReason exceptionReason = 2;
+    Status status = 3;
+}
+
+message AdditionalConfigurationDto {
+    map<string, string> configurationMap = 1;
+}
+
+enum DataKubeStep {
+    VALIDATE_CONNECTION = 0;
+    COLUMN_DISCOVERY = 1;
+    TABLE_DISCOVERY = 2;
+    DEPENDENCIES_DISCOVERY = 3;
+    SAMPLE_DATA = 4;
+    TRAIN = 5;
+    GENERATE = 6;
+    EVALUATE = 7;
+    ML_SPLIT_AND_EVALUATE = 8;
+    ML_TRAIN_AND_GENERATE = 9;
+    TRAIN_AND_GENERATE = 10;
+    WARM_UP = 11;
+    DT_TRAIN = 12;
+    DT_GENERATE = 13;
+    DT_EVALUATE = 14;
+    DT_TRAIN_AND_GENERATE = 15;
+}

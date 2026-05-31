@@ -1,0 +1,44 @@
+# Build outputs
+**/target/
+**/dist/
+**/.nuxt/
+**/.output/
+**/.data/
+
+# Dependencies
+**/node_modules/
+**/.venv/
+**/venv/
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Logs and local runtime
+logs/*
+!logs/.gitignore
+*.log
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+*.swp
+
+# Env secrets (keep example files if added later)
+.env
+.env.*
+!.env.example
+
+# Bundled local Node runtime (use system/nvm instead)
+harticle-frontend/node/
+
+# Dev TLS keys — use your own locally
+**/certs/private.pem
+
+# Engine scratch logs
+harticle-engine/log.txt
+
+# Maven wrapper local (if any)
+.mvn/wrapper/maven-wrapper.jar

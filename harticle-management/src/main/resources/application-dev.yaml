@@ -1,0 +1,35 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5433/harticle
+    username: harticle
+    password: harticle
+  flyway:
+    placeholders:
+      postgres_user: harticle
+    lock-retry-count: 30
+    postgresql:
+      transactional-lock: false
+  kafka:
+    listener:
+      auto-startup: true
+    bootstrap-servers: localhost:9092
+    consumer:
+      bootstrap-servers: localhost:9092
+    producer:
+      bootstrap-servers: localhost:9092
+    properties:
+      security.protocol: PLAINTEXT
+
+multi-tenant:
+  enable: false
+
+harticle:
+  engine:
+    use-kubernetes: false
+    local-mode: true
+
+api:
+  identity:
+    url: http://localhost:8080
+  harticle-engine:
+    url: http://localhost:5000

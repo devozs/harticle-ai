@@ -1,0 +1,7 @@
+.pytest_cache
+*.egg-info
+/test
+/venv
+build_image.sh
+engine.iml
+tox.ini
