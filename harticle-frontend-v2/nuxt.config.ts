@@ -43,10 +43,6 @@ export default defineNuxtConfig({
 
   routeRules: {
     '/**': isDev ? {} : { swr: 120 },
-    // /admin/** depends on the per-user admin_token cookie. SWR caches responses
-    // by route (ignoring cookies), so a cached unauthed→/admin/login redirect was
-    // being replayed after login — making the session look like it never stuck.
-    '/admin/**': { swr: false },
   },
 
   runtimeConfig: {
