@@ -30,6 +30,7 @@ import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
@@ -238,5 +239,28 @@ public class ScraperController {
         }
         return StreamSupport.stream(articleRepository.findAll().spliterator(), false)
                 .collect(Collectors.toList());
+    }
+
+    // --- delete scraped articles (scoped, independent of any run) -------------
+
+    /** Delete every scraped article. Returns {deleted: n}. */
+    @DeleteMapping(ScraperURLS.ARTICLES)
+    @ResponseBody
+    public Map<String, Long> deleteAllArticles() {
+        return Map.of("deleted", scraperService.deleteAllArticles());
+    }
+
+    /** Delete all scraped articles for one site. Returns {deleted: n}. */
+    @DeleteMapping(ScraperURLS.ARTICLES + ScraperURLS.SITE + ScraperURLS.SITE_ID)
+    @ResponseBody
+    public Map<String, Long> deleteArticlesBySite(@PathVariable UUID siteId) {
+        return Map.of("deleted", scraperService.deleteArticlesBySite(siteId));
+    }
+
+    /** Delete all scraped articles for one reporter. Returns {deleted: n}. */
+    @DeleteMapping(ScraperURLS.ARTICLES + ScraperURLS.REPORTER + ScraperURLS.REPORTER_ID)
+    @ResponseBody
+    public Map<String, Long> deleteArticlesByReporter(@PathVariable UUID reporterId) {
+        return Map.of("deleted", scraperService.deleteArticlesByReporter(reporterId));
     }
 }

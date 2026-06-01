@@ -17,9 +17,10 @@ import lombok.experimental.SuperBuilder;
 import java.util.Date;
 
 /**
- * One scraped article, structured for later LLM/fine-tune use. The
- * {@code prompt}/{@code completion} pair mirrors the legacy CSV columns
- * (title-or-subtitle as prompt, body as completion).
+ * One scraped article, structured for later LLM/fine-tune use. The legacy CSV
+ * prompt/completion pair is no longer stored: prompt was just title+subtitle and
+ * completion was an exact copy of {@code content}, so both were pure duplication.
+ * Consumers derive the fine-tune framing from title/subTitle/content directly.
  */
 @Entity
 @Table(name = "scraped_article")
@@ -56,12 +57,6 @@ public class ScrapedArticle extends BaseEntity {
 
     @Column(name = "reporter_name")
     private String reporterName;
-
-    @Column(columnDefinition = "text")
-    private String prompt;
-
-    @Column(columnDefinition = "text")
-    private String completion;
 
     @Column(name = "scraped_at")
     private Date scrapedAt;

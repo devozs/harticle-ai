@@ -12,12 +12,14 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * Drives reporter-article extraction. This is the Java port of the page-loop in
@@ -126,6 +128,35 @@ public class ScraperService {
             progress.finish();
         }
         return summary;
+    }
+
+    // --- delete (scoped) -----------------------------------------------------
+    // Removing scraped articles is independent of any scrape run; it just clears
+    // stored rows in the chosen scope so a subsequent (non-force) run re-fetches.
+
+    /** Delete every scraped article. Returns the number of rows removed. */
+    @Transactional
+    public long deleteAllArticles() {
+        long count = articleRepository.count();
+        articleRepository.deleteAll();
+        log.info("deleted all {} scraped articles", count);
+        return count;
+    }
+
+    /** Delete all scraped articles for one site. Returns the number of rows removed. */
+    @Transactional
+    public long deleteArticlesBySite(UUID siteId) {
+        long count = articleRepository.deleteBySiteId(siteId);
+        log.info("deleted {} scraped articles for site {}", count, siteId);
+        return count;
+    }
+
+    /** Delete all scraped articles for one reporter. Returns the number of rows removed. */
+    @Transactional
+    public long deleteArticlesByReporter(UUID reporterId) {
+        long count = articleRepository.deleteByReporterId(reporterId);
+        log.info("deleted {} scraped articles for reporter {}", count, reporterId);
+        return count;
     }
 
     /**
@@ -244,10 +275,6 @@ public class ScraperService {
         String reporterName = ruleEngine.extractReporter(site, articleHtml);
         String date = ruleEngine.extractDate(site, articleHtml);
 
-        // prompt/completion mirror the legacy subtitle CSV row (title + subtitle -> body),
-        // which is the framing used for fine-tuning.
-        String prompt = title + ".\n" + subtitle + ".";
-
         // Normally insert-only (callers skip existing URLs). With force, overwrite
         // the existing row IN SCOPE — matched by (site, reporter, url) — so a
         // forced run only ever touches its own scope's rows, keeping id/created_at.
@@ -270,8 +297,6 @@ public class ScraperService {
         article.setContent(content);
         article.setReporterName(reporterName);
         article.setPublishedDate(date);
-        article.setPrompt(prompt);
-        article.setCompletion(content);
         article.setScrapedAt(new Date());
         articleRepository.save(article);
 

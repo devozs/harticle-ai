@@ -47,8 +47,6 @@ export interface ScrapedArticle extends BaseEntity {
   content?: string
   publishedDate?: string
   reporterName?: string
-  prompt?: string
-  completion?: string
   scrapedAt?: string
 }
 

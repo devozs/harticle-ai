@@ -54,14 +54,6 @@ const paneClass = computed(() =>
           <dt class="text-xs font-medium uppercase text-gray-400">Content</dt>
           <dd class="whitespace-pre-wrap text-gray-700">{{ article.content || '—' }}</dd>
         </div>
-        <div>
-          <dt class="text-xs font-medium uppercase text-gray-400">Prompt (LLM)</dt>
-          <dd class="whitespace-pre-wrap rounded bg-gray-50 p-2 font-mono text-xs text-gray-600">{{ article.prompt || '—' }}</dd>
-        </div>
-        <div>
-          <dt class="text-xs font-medium uppercase text-gray-400">Completion (LLM)</dt>
-          <dd class="whitespace-pre-wrap rounded bg-gray-50 p-2 font-mono text-xs text-gray-600">{{ article.completion || '—' }}</dd>
-        </div>
       </dl>
     </aside>
   </div>

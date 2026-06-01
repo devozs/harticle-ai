@@ -13,4 +13,8 @@ public interface ScrapedArticleRepository extends CrudRepository<ScrapedArticle,
     /** Scoped lookup for force re-scrape: overwrite this exact pair's row in place. */
     Optional<ScrapedArticle> findBySiteIdAndReporterIdAndSourceUrl(UUID siteId, UUID reporterId, String sourceUrl);
     List<ScrapedArticle> findByReporterId(UUID reporterId);
+
+    /** Bulk-delete scraped articles by scope; returns the number of rows removed. */
+    long deleteBySiteId(UUID siteId);
+    long deleteByReporterId(UUID reporterId);
 }

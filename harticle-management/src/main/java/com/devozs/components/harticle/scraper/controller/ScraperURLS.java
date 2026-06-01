@@ -22,5 +22,8 @@ public final class ScraperURLS {
     public static final String REPORTER_ID = "/{reporterId}";
     public static final String SITE_ID = "/{siteId}";
 
+    /** Scoped article deletion: /articles (all), /articles/site/{siteId}, /articles/reporter/{reporterId}. */
+    public static final String REPORTER = "/reporter";
+
     public static final String URL_PATTERN = "/" + URL + "/**";
 }

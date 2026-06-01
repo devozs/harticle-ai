@@ -96,6 +96,16 @@ export function useScraperApi() {
       query: reporterId ? { reporterId } : undefined,
     })
 
+  // --- delete scraped articles (scoped, independent of any run) -------------
+  const deleteAllArticles = () =>
+    $fetch<{ deleted: number }>(`${base()}/articles`, { method: 'DELETE' })
+
+  const deleteArticlesBySite = (siteId: string) =>
+    $fetch<{ deleted: number }>(`${base()}/articles/site/${siteId}`, { method: 'DELETE' })
+
+  const deleteArticlesByReporter = (reporterId: string) =>
+    $fetch<{ deleted: number }>(`${base()}/articles/reporter/${reporterId}`, { method: 'DELETE' })
+
   return {
     listSites,
     getSite,
@@ -115,5 +125,8 @@ export function useScraperApi() {
     previewArticle,
     previewListing,
     listArticles,
+    deleteAllArticles,
+    deleteArticlesBySite,
+    deleteArticlesByReporter,
   }
 }

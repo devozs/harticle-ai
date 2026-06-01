@@ -191,6 +191,21 @@ export const useScraperStore = defineStore('scraper', {
       }
     },
 
+    // --- delete scraped articles (scoped) ---------------------------------
+    // Returns the number of rows deleted; refreshes the local list afterwards.
+    async deleteArticles(scope: 'all' | 'site' | 'reporter', id?: string) {
+      const api = useScraperApi()
+      const res = await (
+        scope === 'site' && id
+          ? api.deleteArticlesBySite(id)
+          : scope === 'reporter' && id
+            ? api.deleteArticlesByReporter(id)
+            : api.deleteAllArticles()
+      )
+      await this.fetchArticles()
+      return res.deleted
+    },
+
     // --- results -----------------------------------------------------------
     async fetchArticles(reporterId?: string) {
       const { listArticles } = useScraperApi()
