@@ -1,6 +1,7 @@
 package com.devozs.components.harticle.config;
 
 import com.devozs.components.harticle.controller.ArticleBaseURLS;
+import com.devozs.components.harticle.scraper.controller.ScraperURLS;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -24,7 +25,9 @@ public class SecurityConfig {
             "/swagger-ui.html",
             "/swagger-ui/**",
             "/" + ArticleBaseURLS.URL,
-            "/" + ArticleBaseURLS.URL + "/**"
+            "/" + ArticleBaseURLS.URL + "/**",
+            "/" + ScraperURLS.URL,
+            ScraperURLS.URL_PATTERN
     };
 
     public static final List<String> ORIGIN_PATTERNS = List.of(

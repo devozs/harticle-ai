@@ -5,6 +5,8 @@ const apiHost = process.env.NUXT_PUBLIC_API_HOST
 const apiBase = process.env.NUXT_PUBLIC_API_BASE || `${apiHost}/api`
 const siteUrl = process.env.NUXT_PUBLIC_SITE_URL
   || (isDev ? 'http://localhost:3000' : 'https://harticle.devozs.com')
+// Friction-only gate for the /admin section (NOT real security; backend stays open).
+const adminPassphrase = process.env.NUXT_PUBLIC_ADMIN_PASSPHRASE || 'harticle-admin'
 
 export default defineNuxtConfig({
   compatibilityDate: '2025-05-31',
@@ -41,6 +43,10 @@ export default defineNuxtConfig({
 
   routeRules: {
     '/**': isDev ? {} : { swr: 120 },
+    // /admin/** depends on the per-user admin_token cookie. SWR caches responses
+    // by route (ignoring cookies), so a cached unauthed→/admin/login redirect was
+    // being replayed after login — making the session look like it never stuck.
+    '/admin/**': { swr: false },
   },
 
   runtimeConfig: {
@@ -48,6 +54,7 @@ export default defineNuxtConfig({
       apiBase,
       apiHost,
       siteUrl,
+      adminPassphrase,
     },
   },
 
