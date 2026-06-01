@@ -189,6 +189,8 @@ public class ScraperService {
         Set<String> seenThisRun = new HashSet<>();
         int consecutiveFailures = 0;
         int pageCap = resolvePageCap(site, pagesOverride);
+        // Previous page's links, to detect sites (one.co.il) that clamp pagination.
+        List<String> prevLinks = null;
 
         for (int page = 1; page <= pageCap; page++) {
             if (progress.isCancelRequested()) {
@@ -230,6 +232,16 @@ public class ScraperService {
                 log.info("no more articles for {}, stopping at page {}", reporter.getReporterKey(), page);
                 break;
             }
+
+            // Some sites (one.co.il) clamp pagination: past the last real page
+            // they repeat the last page's articles instead of returning empty.
+            // Stop when a page's link set is identical to the previous page's.
+            if (prevLinks != null && new HashSet<>(links).equals(new HashSet<>(prevLinks))) {
+                log.info("listing page repeats previous page for {}, stopping at page {}",
+                        reporter.getReporterKey(), page);
+                break;
+            }
+            prevLinks = links;
 
             for (String link : links) {
                 if (progress.isCancelRequested()) {

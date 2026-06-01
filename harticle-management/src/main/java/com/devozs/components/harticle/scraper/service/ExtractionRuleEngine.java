@@ -34,17 +34,21 @@ public class ExtractionRuleEngine {
         listingHtml = truncateAtStopMarker(site, listingHtml);
 
         if (strategy == ParserStrategy.ONE) {
+            // one.co.il's mobile listing emits absolute hrefs; strip the base so
+            // the engine's baseUrl + link reconstructs correctly (as SPORT5/WALLA).
             for (String link : findAll(site.getArticleLinkRule(), listingHtml)) {
                 if (!link.contains("MoreArticles")) {
-                    links.add(link);
+                    links.add(link.replace(site.getBaseUrl(), ""));
                 }
             }
             return links;
         }
 
         if (strategy == ParserStrategy.WALLA) {
-            // Legacy behaviour: narrow to the <h2><ul>...</ul> block first, then pull https hrefs.
-            List<String> blocks = findAll("(?<=</h2><ul>)(.*)(?=</ul>)", listingHtml);
+            // Narrow to the reporter's own feed ("כל הכתבות של …") so cross-promo
+            // links from other Walla domains and nav lists are excluded.
+            List<String> blocks =
+                    findAll("(?s)(?<=<section class=\"writer-articles\">)(.*?)(?=</section>)", listingHtml);
             if (!blocks.isEmpty()) {
                 for (String link : findAll(site.getArticleLinkRule(), blocks.get(0))) {
                     if (link.contains("item") && link.contains("sports")) {
