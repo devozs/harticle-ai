@@ -16,23 +16,40 @@ const error = ref('')
 // One-time enrollment code shown after issue, with the right install+run snippet.
 const codeModal = ref<{ name: string, code: string, type: ComputeResourceType } | undefined>()
 
-// Git source for pip-from-git (repo: devozs/harticle-ai, engine subdir).
+// Repo + pip-from-git source (repo: devozs/harticle-ai, engine subdir).
+const REPO_SSH = 'git@github.com:devozs/harticle-ai.git'
 const GIT_SRC = 'git+ssh://git@github.com/devozs/harticle-ai.git#subdirectory=harticle-engine'
 
-// CUDA laptop/host: pip install from git + run. HPU/Gaudi: docker run on Habana base.
+// CUDA laptop/host: pip install from git + run. HPU/Gaudi: clone → build the
+// Habana-based agent image → run. The Gaudi base image MUST match the VM's
+// SynapseAI driver (check `hl-smi`), so the snippet builds locally on the box
+// rather than pulling a possibly-mismatched published image.
 const enrollSnippet = computed(() => {
   const m = codeModal.value
   if (!m) return ''
   const mgmt = apiBase.value
   if (m.type === 'HPU') {
     return [
-      '# On the Gaudi VM (agent image built on Habana base — see harticle-engine/Dockerfile.agent):',
+      '# On the Gaudi VM. The Dockerfile.agent lives in harticle-engine/, so you',
+      '# must clone the repo and cd into it first (this avoids the common',
+      '# "open Dockerfile.agent: no such file or directory" error).',
+      `git clone ${REPO_SSH}    # skip if already cloned`,
+      'cd harticle-ai/harticle-engine',
+      '',
+      '# Match <synapse>/<pytorch> to your driver — run `hl-smi` to see the',
+      '# SynapseAI version, then pick the matching tag from vault.habana.ai.',
+      'docker build -f Dockerfile.agent \\',
+      '  --build-arg BASE_IMAGE=vault.habana.ai/gaudi-docker/<synapse>/ubuntu22.04/habanalabs/pytorch-installer-<pytorch>:latest \\',
+      '  --build-arg EXTRAS=training,gaudi -t harticle-agent:gaudi .',
+      '',
+      '# Requires the Habana container runtime registered in Docker',
+      '# (`docker info | grep -i runtime` should list "habana").',
       'docker run --rm --runtime=habana \\',
       '  -e HABANA_VISIBLE_DEVICES=all -e OMPI_MCA_btl_vader_single_copy_mechanism=none \\',
       `  -e ENROLL_CODE=${m.code} \\`,
       `  -e MGMT_URL=${mgmt} \\`,
       '  -e AGENT_TYPE=HPU \\',
-      '  ghcr.io/devozs/harticle-agent:gaudi',
+      '  harticle-agent:gaudi',
     ].join('\n')
   }
   return [

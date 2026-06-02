@@ -40,36 +40,42 @@ python -m harticle.training
 ```
 
 **Intel Gaudi VM** — `habana_frameworks` is not pip-installable standalone, so run the agent inside
-an image built on Habana's base (see `Dockerfile.agent`).
-
-Published images (built by `.github/workflows/harticleAgentDockerBuildPush.yaml` →
-`ghcr.io/devozs/harticle-agent:{cuda,gaudi}`, an org-scoped GHCR package — no repo of that name is
-required):
+an image built on Habana's base (`Dockerfile.agent`). Build it **on the VM** so the base image matches
+the local SynapseAI driver — `Dockerfile.agent` lives in `harticle-engine/`, so clone and `cd` first
+(this is the usual cause of `open Dockerfile.agent: no such file or directory`):
 
 ```bash
-docker run --rm --runtime=habana -e HABANA_VISIBLE_DEVICES=all \
+git clone git@github.com:devozs/harticle-ai.git        # skip if already cloned
+cd harticle-ai/harticle-engine
+
+# 1) find your SynapseAI version
+hl-smi          # read the Driver Version, e.g. 1.24.1
+# 2) pick the matching base tag from https://vault.habana.ai/ui/native/gaudi-docker
+#    (each <synapse> dir contains a paired pytorch-installer-<pytorch>)
+docker build -f Dockerfile.agent \
+  --build-arg BASE_IMAGE=vault.habana.ai/gaudi-docker/<synapse>/ubuntu22.04/habanalabs/pytorch-installer-<pytorch>:latest \
+  --build-arg EXTRAS=training,gaudi -t harticle-agent:gaudi .
+
+docker run --rm --runtime=habana \
+  -e HABANA_VISIBLE_DEVICES=all -e OMPI_MCA_btl_vader_single_copy_mechanism=none \
   -e ENROLL_CODE=HRT-xxxx -e MGMT_URL=http://<mgmt-host>:8080/api -e AGENT_TYPE=HPU \
-  ghcr.io/devozs/harticle-agent:gaudi
+  harticle-agent:gaudi
 ```
 
-> **Match the SynapseAI version.** The `:gaudi` image is built from a Habana base image that must
-> match the driver on your VM. The CI builds `gaudi` only via **workflow_dispatch**, where you pass
-> the correct `gaudi_base_image` input. If your VM's driver differs from the published image, build
-> locally on the VM instead:
->
-> ```bash
-> docker build -f Dockerfile.agent \
->   --build-arg BASE_IMAGE=vault.habana.ai/gaudi-docker/<ver>/ubuntu22.04/habanalabs/pytorch-installer-<ver>:latest \
->   --build-arg EXTRAS=training,gaudi -t harticle-agent:gaudi .
-> ```
+> **Match the driver.** The container's SynapseAI version should match the VM's driver
+> (`hl-smi` → *Driver Version*); a wide gap commonly fails at device init. Browse real tags at
+> <https://vault.habana.ai/ui/native/gaudi-docker> — don't guess a `pytorch-installer-<ver>` that
+> may not exist.
 
 > **Host prerequisite:** `--runtime=habana` requires the Habana container runtime on the VM
 > (`habanalabs-container-runtime` registered in `/etc/docker/daemon.json`, then `systemctl restart
 > docker`). Verify with `docker info | grep -i runtime`.
 
-(The same `Dockerfile.agent` builds the CUDA image with
-`--build-arg BASE_IMAGE=pytorch/pytorch:2.3.0-cuda12.1-cudnn8-runtime --build-arg EXTRAS=training,cuda`;
-CI publishes it as `:cuda` on every push to main.)
+The CI (`.github/workflows/harticleAgentDockerBuildPush.yaml`) can also publish
+`ghcr.io/devozs/harticle-agent:gaudi` via **workflow_dispatch** (pass the `gaudi_base_image` matching
+your driver) — use that once your fleet standardizes on one SynapseAI version. The CUDA image
+(`:cuda`, base `pytorch/pytorch:2.3.0-cuda12.1-cudnn8-runtime`, `EXTRAS=training,cuda`) is published
+automatically on every push to main.
 
 ### setup.py extras
 - `training` — base agent: `transformers`, `datasets`, `boto3`.
