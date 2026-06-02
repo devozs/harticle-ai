@@ -23,6 +23,11 @@ import java.util.List;
 public class SecurityConfig {
 
     private static final String[] AUTH_WHITELIST = {
+            // Spring Boot forwards thrown exceptions to /error to render the
+            // response. That forward re-enters this filter chain, so /error must
+            // be permitted — otherwise EVERY error (401/404/500) is masked as an
+            // anonymous-denied 403 with an empty body, hiding the real status.
+            "/error",
             "/v3/api-docs/**",
             "/swagger-ui.html",
             "/swagger-ui/**",

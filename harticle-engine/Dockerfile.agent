@@ -34,7 +34,10 @@ WORKDIR /app
 COPY setup.py README.md ./
 COPY harticle ./harticle
 
-RUN pip install --no-cache-dir ".[${EXTRAS}]"
+# -v + default progress bar so `docker build --progress=plain` streams what pip
+# is collecting/downloading (the Gaudi deps are large and slow over a proxy, so
+# the build can look stuck for many minutes without this).
+RUN pip install --no-cache-dir -v --progress-bar on ".[${EXTRAS}]"
 
 # Token cache + agent scratch live here; mount a volume to persist the token
 # across restarts so the box doesn't need re-enrolling.
