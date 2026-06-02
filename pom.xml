@@ -36,6 +36,7 @@
         <jwt-io.version>0.12.6</jwt-io.version>
         <modelmapper.version>3.2.2</modelmapper.version>
         <protobuf.version>3.25.5</protobuf.version>
+        <aws-sdk.version>2.28.16</aws-sdk.version>
         <node.version>v22.22.2</node.version>
         <npm.version>10.9.7</npm.version>
         <maven-enforcer-plugin.version>3.5.0</maven-enforcer-plugin.version>
@@ -51,6 +52,13 @@
                 <groupId>com.devozs.harticle</groupId>
                 <artifactId>devozs-common</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${aws-sdk.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
             </dependency>
             <dependency>
                 <groupId>org.springdoc</groupId>

@@ -7,11 +7,13 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.web.client.RestTemplate;
 
 @SpringBootApplication(scanBasePackages = "com.devozs")
 @EnableJpaRepositories(basePackages = "com.devozs")
 @EnableAsync
+@EnableScheduling
 public class HarticleManagementApplication {
 
 //    @Bean

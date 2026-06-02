@@ -2,6 +2,8 @@ package com.devozs.components.harticle.config;
 
 import com.devozs.components.harticle.controller.ArticleBaseURLS;
 import com.devozs.components.harticle.scraper.controller.ScraperURLS;
+import com.devozs.components.harticle.training.controller.TrainingAgentURLS;
+import com.devozs.components.harticle.training.controller.TrainingURLS;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -27,7 +29,12 @@ public class SecurityConfig {
             "/" + ArticleBaseURLS.URL,
             "/" + ArticleBaseURLS.URL + "/**",
             "/" + ScraperURLS.URL,
-            ScraperURLS.URL_PATTERN
+            ScraperURLS.URL_PATTERN,
+            // Agent protocol authenticates by its own bearer token (see
+            // TrainingAgentController); admin/FE endpoints sit behind the FE
+            // passphrase gate. Both permitAll at the Spring layer, like the scraper.
+            TrainingAgentURLS.URL_PATTERN,
+            TrainingURLS.URL_PATTERN
     };
 
     public static final List<String> ORIGIN_PATTERNS = List.of(

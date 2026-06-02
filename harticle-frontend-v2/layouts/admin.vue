@@ -8,6 +8,8 @@ const nav = [
   { to: '/admin/scraper/sites', label: 'Sites & Rules' },
   { to: '/admin/scraper/reporters', label: 'Reporters' },
   { to: '/admin/scraper/results', label: 'Run & Results' },
+  { to: '/admin/training/resources', label: 'Compute Resources' },
+  { to: '/admin/training/sessions', label: 'Training Sessions' },
 ]
 
 function isActive(item: { to: string, exact?: boolean }) {
