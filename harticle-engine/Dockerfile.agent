@@ -1,0 +1,45 @@
+# Harticle training agent image.
+#
+# The agent connects OUTBOUND to management (enroll/heartbeat/claim/report), so a
+# container just needs Python + the harticle package + the right accelerator
+# stack. Parameterized by base image so one file builds both targets:
+#
+#   CUDA laptop / GPU host:
+#     docker build -f Dockerfile.agent \
+#       --build-arg BASE_IMAGE=pytorch/pytorch:2.3.0-cuda12.1-cudnn8-runtime \
+#       --build-arg EXTRAS=training,cuda -t harticle-agent:cuda .
+#
+#   Intel Gaudi VM (use Habana's base image so habana_frameworks + the matched
+#   SynapseAI driver are present; pick the tag matching your driver):
+#     docker build -f Dockerfile.agent \
+#       --build-arg BASE_IMAGE=vault.habana.ai/gaudi-docker/1.16.0/ubuntu22.04/habanalabs/pytorch-installer-2.2.2:latest \
+#       --build-arg EXTRAS=training,gaudi -t harticle-agent:gaudi .
+#
+# Run (env supplies the one-time enrollment code + management URL):
+#   docker run --rm --gpus all \                 # CUDA
+#     -e ENROLL_CODE=HRT-xxxx -e MGMT_URL=http://<mgmt-host>:8080/api \
+#     harticle-agent:cuda
+#   docker run --rm --runtime=habana ... harticle-agent:gaudi   # Gaudi
+
+ARG BASE_IMAGE=pytorch/pytorch:2.3.0-cuda12.1-cudnn8-runtime
+FROM ${BASE_IMAGE}
+
+# Which setup.py extras to install: training[,cuda] or training[,gaudi].
+ARG EXTRAS=training
+
+WORKDIR /app
+
+# Install only what the agent needs (the package + selected extras). Copy the
+# minimum so a code change doesn't bust the dependency layer unnecessarily.
+COPY setup.py README.md ./
+COPY harticle ./harticle
+
+RUN pip install --no-cache-dir ".[${EXTRAS}]"
+
+# Token cache + agent scratch live here; mount a volume to persist the token
+# across restarts so the box doesn't need re-enrolling.
+ENV AGENT_TOKEN_FILE=/agent/agent-token.json \
+    AGENT_WORK_DIR=/agent/work
+VOLUME ["/agent"]
+
+ENTRYPOINT ["python", "-m", "harticle.training"]

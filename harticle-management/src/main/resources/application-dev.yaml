@@ -27,6 +27,16 @@ harticle:
   engine:
     use-kubernetes: false
     local-mode: true
+  storage:
+    type: local
+    local:
+      root: /tmp/harticle-training
+      # management is reachable at localhost:8080/api in dev, so a co-located
+      # agent reads the file:// path directly; leave public-base-url empty.
+      public-base-url: ""
+  training:
+    stall-timeout-seconds: 300
+    heartbeat-timeout-seconds: 60
 
 api:
   identity:

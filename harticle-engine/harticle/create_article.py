@@ -52,8 +52,14 @@ def create_article(env_vars: EnvVariables, data_kube_client: DataKubeJobClient):
     LOGGER.info("Sending SUBTASK_COMPLETED")
     data_kube_client.send_subtask_completed(status=data_kube_client.Status.SUCCESS)
 
-    tokenizer = AutoTokenizer.from_pretrained("devozs/hebrew-gpt_neo-small-soccer-news")
-    model = AutoModelForCausalLM.from_pretrained("devozs/hebrew-gpt_neo-small-soccer-news",
+    # Which model to run for inference. Defaults to the original fine-tune, but a
+    # custom model produced by the training agent can be selected by setting
+    # HARTICLE_INFERENCE_MODEL to its HF Hub repo id (or a local dir downloaded
+    # from object storage). This is how a freshly trained model goes live.
+    inference_model = os.getenv("HARTICLE_INFERENCE_MODEL", "devozs/hebrew-gpt_neo-small-soccer-news")
+    LOGGER.info("loading inference model: %s", inference_model)
+    tokenizer = AutoTokenizer.from_pretrained(inference_model)
+    model = AutoModelForCausalLM.from_pretrained(inference_model,
                                                  pad_token_id=tokenizer.eos_token_id)
 
     prompt_text = "מכבי חיפה שוב מנצחת אחרי שער בדקות הסיום"

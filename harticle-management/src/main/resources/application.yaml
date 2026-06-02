@@ -74,3 +74,22 @@ presignedurl-expiration-in-hours: 12
 
 multi-tenant:
   enable: true
+
+harticle:
+  storage:
+    # local (disk / k8s PVC) | s3 (Nebius or any S3-compatible)
+    type: ${TRAINING_STORAGE_TYPE:local}
+    local:
+      root: ${TRAINING_STORAGE_ROOT:/data/harticle-training}
+      public-base-url: ${TRAINING_STORAGE_PUBLIC_URL:}
+    s3:
+      endpoint: ${TRAINING_S3_ENDPOINT:}
+      bucket: ${TRAINING_S3_BUCKET:}
+      region: ${TRAINING_S3_REGION:us-east-1}
+      access-key: ${TRAINING_S3_ACCESS_KEY:}
+      secret-key: ${TRAINING_S3_SECRET_KEY:}
+      path-style: ${TRAINING_S3_PATH_STYLE:true}
+  training:
+    stall-timeout-seconds: ${TRAINING_STALL_TIMEOUT_SECONDS:300}
+    heartbeat-timeout-seconds: ${TRAINING_HEARTBEAT_TIMEOUT_SECONDS:60}
+    presign-ttl-minutes: ${TRAINING_PRESIGN_TTL_MINUTES:720}
