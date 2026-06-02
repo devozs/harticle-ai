@@ -1,6 +1,10 @@
 <script setup lang="ts">
+import dayjs from 'dayjs'
+import customParseFormat from 'dayjs/plugin/customParseFormat'
 import type { ScrapedArticle } from '~/types/scraper'
 import { formatDateTime } from '~/utils/format'
+
+dayjs.extend(customParseFormat)
 
 const props = defineProps<{ articles: ScrapedArticle[], selectedId?: string }>()
 const emit = defineEmits<{ open: [article: ScrapedArticle] }>()
@@ -9,10 +13,16 @@ const emit = defineEmits<{ open: [article: ScrapedArticle] }>()
 const reporterOf = (a: ScrapedArticle) => a.reporterName || a.reporter?.displayName || '—'
 const siteOf = (a: ScrapedArticle) => a.site?.name || '—'
 
-// --- filter + sort on Reporter / Site columns ------------------------------
+// Timestamp helpers for date sorting. publishedDate is rendered as DD.MM.YY,
+// scrapedAt is an ISO string; rows without a value sort last (NaN).
+const publishedTime = (a: ScrapedArticle) =>
+  a.publishedDate ? dayjs(a.publishedDate, ['DD.MM.YY', 'DD.MM.YYYY', 'YYYY-MM-DD']).valueOf() : NaN
+const scrapedTime = (a: ScrapedArticle) => (a.scrapedAt ? dayjs(a.scrapedAt).valueOf() : NaN)
+
+// --- filter + sort on Reporter / Site / Published / Scraped columns --------
 const filterReporter = ref('')
 const filterSite = ref('')
-type SortKey = 'reporter' | 'site'
+type SortKey = 'reporter' | 'site' | 'published' | 'scraped'
 const sortKey = ref<SortKey | null>(null)
 const sortAsc = ref(true)
 
@@ -42,9 +52,22 @@ const displayed = computed(() => {
   if (filterReporter.value) rows = rows.filter(a => reporterOf(a) === filterReporter.value)
   if (filterSite.value) rows = rows.filter(a => siteOf(a) === filterSite.value)
   if (sortKey.value) {
-    const get = sortKey.value === 'reporter' ? reporterOf : siteOf
+    const key = sortKey.value
     rows = [...rows].sort((a, b) => {
-      const cmp = get(a).localeCompare(get(b))
+      let cmp: number
+      if (key === 'reporter' || key === 'site') {
+        const get = key === 'reporter' ? reporterOf : siteOf
+        cmp = get(a).localeCompare(get(b))
+      } else {
+        const get = key === 'published' ? publishedTime : scrapedTime
+        const ta = get(a)
+        const tb = get(b)
+        // Missing/unparseable dates (NaN) always sort to the bottom.
+        if (Number.isNaN(ta) && Number.isNaN(tb)) cmp = 0
+        else if (Number.isNaN(ta)) return 1
+        else if (Number.isNaN(tb)) return -1
+        else cmp = ta - tb
+      }
       return sortAsc.value ? cmp : -cmp
     })
   }
@@ -83,8 +106,16 @@ const displayed = computed(() => {
             <option v-for="s in siteOptions" :key="s" :value="s">{{ s }}</option>
           </select>
         </th>
-        <th class="py-2 pr-3 font-medium align-top">Published</th>
-        <th class="py-2 font-medium align-top">Scraped</th>
+        <th class="py-2 pr-3 font-medium align-top">
+          <button type="button" class="font-medium hover:text-gray-800" @click="toggleSort('published')">
+            Published <span class="text-gray-400">{{ sortIcon('published') }}</span>
+          </button>
+        </th>
+        <th class="py-2 font-medium align-top">
+          <button type="button" class="font-medium hover:text-gray-800" @click="toggleSort('scraped')">
+            Scraped <span class="text-gray-400">{{ sortIcon('scraped') }}</span>
+          </button>
+        </th>
       </tr>
     </thead>
     <tbody>
