@@ -9,6 +9,14 @@ public final class TrainingAgentURLS {
 
     public static final String URL = "training/agent";
 
+    /**
+     * Per-agent bearer token header. Deliberately NOT {@code Authorization}: the
+     * OAuth2 resource-server filter on the classpath intercepts {@code
+     * Authorization: Bearer} and 403s our opaque (non-JWT) agent token before the
+     * controller runs. A custom header bypasses that filter entirely.
+     */
+    public static final String TOKEN_HEADER = "X-Agent-Token";
+
     public static final String ENROLL = "/enroll";
     public static final String HEARTBEAT = "/heartbeat";
     public static final String CLAIM = "/claim";

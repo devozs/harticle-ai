@@ -20,8 +20,9 @@ from typing import Optional
 
 LOGGER = logging.getLogger(__name__)
 
-# Small, fast model that's enough to exercise the generate path.
-DEFAULT_PROBE_MODEL = os.getenv("PREFLIGHT_MODEL", "sshleifer/tiny-gpt2")
+# Empty by default → offline in-memory probe (no Hub download, air-gap safe).
+# Set PREFLIGHT_MODEL to a repo id / local path to validate a real model instead.
+DEFAULT_PROBE_MODEL = os.getenv("PREFLIGHT_MODEL", "").strip()
 
 
 @dataclass
@@ -78,30 +79,58 @@ def identify_gaudi() -> dict:
     return caps
 
 
-def _sample_workload(device_kind: str) -> dict:
-    """Load a tiny causal-LM, move to the device, and generate a few tokens."""
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+def _resolve_device(device_kind: str):
     import torch
-
-    model_id = DEFAULT_PROBE_MODEL
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
-    model = AutoModelForCausalLM.from_pretrained(model_id)
-
     if device_kind == "CUDA":
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-    elif device_kind == "HPU":
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    if device_kind == "HPU":
         import habana_frameworks.torch.core as htcore  # noqa: F401
-        device = "hpu"
-    else:
-        device = "cpu"
+        return "hpu"
+    return "cpu"
 
+
+def _sample_workload(device_kind: str) -> dict:
+    """Prove the accelerator + transformers + generate path works.
+
+    By default this is fully OFFLINE: it builds a tiny GPT-2 from config with
+    random weights (no Hub download, no torch.load — so it works air-gapped and
+    sidesteps the torch<2.6 safetensors/CVE load guard). Set PREFLIGHT_MODEL to a
+    repo id or local path to instead load a real model (needs egress or a local
+    cache); useful when you want to validate the exact base model too.
+    """
+    import torch
+    from transformers import AutoConfig, AutoModelForCausalLM
+
+    device = _resolve_device(device_kind)
+
+    if DEFAULT_PROBE_MODEL:
+        # Opt-in: validate a real model (download or local cache).
+        from transformers import AutoTokenizer
+        tokenizer = AutoTokenizer.from_pretrained(DEFAULT_PROBE_MODEL)
+        model = AutoModelForCausalLM.from_pretrained(DEFAULT_PROBE_MODEL)
+        model.to(device)
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+        inputs = tokenizer("hello", return_tensors="pt").to(device)
+        out = model.generate(**inputs, max_new_tokens=8)
+        sample = tokenizer.decode(out[0], skip_special_tokens=True)[:80]
+        return {"probeModel": DEFAULT_PROBE_MODEL, "device": device, "sample": sample}
+
+    # Default: tiny in-memory model, no I/O.
+    cfg = AutoConfig.for_model(
+        "gpt2", vocab_size=128, n_positions=32, n_embd=32, n_layer=2, n_head=2,
+    )
+    model = AutoModelForCausalLM.from_config(cfg)
     model.to(device)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-    inputs = tokenizer("hello", return_tensors="pt").to(device)
-    out = model.generate(**inputs, max_new_tokens=8)
-    text = tokenizer.decode(out[0], skip_special_tokens=True)
-    return {"probeModel": model_id, "device": device, "sample": text[:80]}
+    model.eval()
+    input_ids = torch.randint(0, cfg.vocab_size, (1, 4)).to(device)
+    with torch.no_grad():
+        out = model.generate(input_ids, max_new_tokens=8, do_sample=False)
+    return {
+        "probeModel": "in-memory tiny-gpt2 (offline)",
+        "device": device,
+        "generatedTokens": int(out.shape[-1]),
+    }
 
 
 def run_preflight(device_kind: str, stub: bool = False) -> PreflightResult:

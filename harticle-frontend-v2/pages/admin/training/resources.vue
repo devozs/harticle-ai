@@ -63,6 +63,12 @@ const enrollSnippet = computed(() => {
   ].join('\n')
 })
 
+// Individually-copyable bits, for when the user already has the agent set up and
+// only needs the new code (or to point it at a different management URL).
+const enrollCodeVar = computed(() =>
+  codeModal.value ? `ENROLL_CODE=${codeModal.value.code}` : '')
+const mgmtUrlVar = computed(() => `MGMT_URL=${apiBase.value}`)
+
 // Light poll so VERIFYING → READY (and heartbeat status) refresh live.
 let poll: ReturnType<typeof setInterval> | undefined
 onMounted(() => {
@@ -108,9 +114,9 @@ async function remove(resource: ComputeResource) {
   await store.deleteResource(resource.id)
 }
 
-function copySnippet() {
+function copy(text: string) {
   if (import.meta.client && navigator.clipboard) {
-    navigator.clipboard.writeText(enrollSnippet.value)
+    navigator.clipboard.writeText(text)
   }
 }
 </script>
@@ -200,6 +206,48 @@ function copySnippet() {
           run it with the code — it connects outbound, so no inbound access is needed.
         </p>
         <pre class="mt-3 overflow-auto rounded-lg bg-gray-900 p-4 text-xs leading-relaxed text-green-300">{{ enrollSnippet }}</pre>
+
+        <!-- Quick-copy individual bits, for an already-configured box that just
+             needs the new code or a different management URL. -->
+        <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div>
+            <label class="text-xs font-medium text-gray-500">Enrollment code</label>
+            <div class="mt-1 flex">
+              <input
+                :value="enrollCodeVar"
+                readonly
+                class="w-full rounded-l-lg border border-gray-300 bg-gray-50 px-3 py-1.5 font-mono text-xs text-gray-800"
+                @focus="(e) => (e.target as HTMLInputElement).select()"
+              >
+              <button
+                type="button"
+                class="rounded-r-lg border border-l-0 border-gray-300 px-3 py-1.5 text-xs text-cyan-800 hover:bg-cyan-50"
+                @click="copy(enrollCodeVar)"
+              >
+                Copy
+              </button>
+            </div>
+          </div>
+          <div>
+            <label class="text-xs font-medium text-gray-500">Target management URL</label>
+            <div class="mt-1 flex">
+              <input
+                :value="mgmtUrlVar"
+                readonly
+                class="w-full rounded-l-lg border border-gray-300 bg-gray-50 px-3 py-1.5 font-mono text-xs text-gray-800"
+                @focus="(e) => (e.target as HTMLInputElement).select()"
+              >
+              <button
+                type="button"
+                class="rounded-r-lg border border-l-0 border-gray-300 px-3 py-1.5 text-xs text-cyan-800 hover:bg-cyan-50"
+                @click="copy(mgmtUrlVar)"
+              >
+                Copy
+              </button>
+            </div>
+          </div>
+        </div>
+
         <p class="mt-2 text-xs text-gray-400">
           On first run the agent enrolls (redeeming this code for a saved bearer token), runs its
           readiness preflight, then waits for jobs. The token is cached, so restarts don't re-enroll.
@@ -208,9 +256,9 @@ function copySnippet() {
           <button
             type="button"
             class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-100"
-            @click="copySnippet"
+            @click="copy(enrollSnippet)"
           >
-            Copy
+            Copy all
           </button>
           <button
             type="button"

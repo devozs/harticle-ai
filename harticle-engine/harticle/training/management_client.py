@@ -64,7 +64,9 @@ class ManagementClient:
     def _headers(self) -> dict:
         h = {"Content-Type": "application/json"}
         if self.token:
-            h["Authorization"] = f"Bearer {self.token}"
+            # Custom header, NOT Authorization: the server's OAuth2 resource-server
+            # filter would 403 an opaque (non-JWT) token sent as a bearer.
+            h["X-Agent-Token"] = self.token
         return h
 
     def _agent(self, path: str) -> str:

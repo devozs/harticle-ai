@@ -21,7 +21,6 @@ import com.devozs.components.harticle.training.service.TrainingSessionService;
 import com.devozs.components.harticle.training.storage.StorageService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.InputStreamResource;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -38,12 +37,15 @@ import java.util.UUID;
 
 /**
  * Agent-facing polling protocol. Every call (except {@link #enroll}) authenticates
- * via the {@code Authorization: Bearer <token>} header, resolved to a
- * {@link ComputeResource}. All connections are OUTBOUND from the agent, so this
- * works behind NAT / a corporate proxy without management ever dialing the box.
+ * via the {@code X-Agent-Token} header, resolved to a {@link ComputeResource}. A
+ * custom header (not {@code Authorization}) is used on purpose: the OAuth2
+ * resource-server filter would otherwise intercept {@code Authorization: Bearer}
+ * and reject our opaque (non-JWT) token before the controller runs. All
+ * connections are OUTBOUND from the agent, so this works behind NAT / a corporate
+ * proxy without management ever dialing the box.
  *
  * <p>These endpoints are {@code permitAll} at the Spring Security level (like the
- * scraper); the bearer token is enforced here in {@link #resolve}.
+ * scraper); the agent token is enforced here in {@link #resolve}.
  */
 @RestController
 @RequestMapping(TrainingAgentURLS.URL)
@@ -77,9 +79,9 @@ public class TrainingAgentController {
 
     @PostMapping(TrainingAgentURLS.HEARTBEAT)
     @ResponseBody
-    public HeartbeatResponse heartbeat(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth,
+    public HeartbeatResponse heartbeat(@RequestHeader(TrainingAgentURLS.TOKEN_HEADER) String agentToken,
                                        @RequestBody HeartbeatRequest request) {
-        ComputeResource resource = resolve(auth);
+        ComputeResource resource = resolve(agentToken);
         resourceService.heartbeat(resource, request.getStatus());
         return HeartbeatResponse.builder()
                 .ack(true)
@@ -93,17 +95,17 @@ public class TrainingAgentController {
      * a tiny real LLM workload). A passing check makes the box claimable.
      */
     @PostMapping(TrainingAgentURLS.PREFLIGHT)
-    public ResponseEntity<Void> preflight(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth,
+    public ResponseEntity<Void> preflight(@RequestHeader(TrainingAgentURLS.TOKEN_HEADER) String agentToken,
                                           @RequestBody PreflightReport report) {
-        ComputeResource resource = resolve(auth);
+        ComputeResource resource = resolve(agentToken);
         resourceService.recordPreflight(resource, report.isOk(), report.getDetail(), report.getCapabilities());
         return ResponseEntity.noContent().build();
     }
 
     /** Claim the next matching job; 204 when nothing is available. */
     @PostMapping(TrainingAgentURLS.CLAIM)
-    public ResponseEntity<AgentJobDto> claim(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth) {
-        ComputeResource resource = resolve(auth);
+    public ResponseEntity<AgentJobDto> claim(@RequestHeader(TrainingAgentURLS.TOKEN_HEADER) String agentToken) {
+        ComputeResource resource = resolve(agentToken);
         return agentService.claim(resource)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.noContent().build());
@@ -113,58 +115,58 @@ public class TrainingAgentController {
 
     @PostMapping(TrainingAgentURLS.SESSIONS + TrainingAgentURLS.ID + TrainingAgentURLS.PROGRESS)
     @ResponseBody
-    public ProgressAck progress(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth,
+    public ProgressAck progress(@RequestHeader(TrainingAgentURLS.TOKEN_HEADER) String agentToken,
                                 @PathVariable UUID id,
                                 @RequestBody ProgressReport report) {
-        ComputeResource resource = resolve(auth);
+        ComputeResource resource = resolve(agentToken);
         TrainingSession session = requireOwned(resource, id);
         return agentService.recordProgress(session, report);
     }
 
     @PostMapping(TrainingAgentURLS.SESSIONS + TrainingAgentURLS.ID + TrainingAgentURLS.LOG)
-    public ResponseEntity<Void> log(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth,
+    public ResponseEntity<Void> log(@RequestHeader(TrainingAgentURLS.TOKEN_HEADER) String agentToken,
                                     @PathVariable UUID id,
                                     @RequestBody LogLine line) {
-        ComputeResource resource = resolve(auth);
+        ComputeResource resource = resolve(agentToken);
         requireOwned(resource, id);
         sessionService.appendLog(id, line.getLevel(), line.getMessage());
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping(TrainingAgentURLS.SESSIONS + TrainingAgentURLS.ID + TrainingAgentURLS.CHECKPOINT)
-    public ResponseEntity<Void> checkpoint(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth,
+    public ResponseEntity<Void> checkpoint(@RequestHeader(TrainingAgentURLS.TOKEN_HEADER) String agentToken,
                                            @PathVariable UUID id,
                                            @RequestBody CheckpointReport report) {
-        ComputeResource resource = resolve(auth);
+        ComputeResource resource = resolve(agentToken);
         TrainingSession session = requireOwned(resource, id);
         agentService.recordCheckpoint(session, report.getCheckpointUri());
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping(TrainingAgentURLS.SESSIONS + TrainingAgentURLS.ID + TrainingAgentURLS.COMPLETE)
-    public ResponseEntity<Void> complete(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth,
+    public ResponseEntity<Void> complete(@RequestHeader(TrainingAgentURLS.TOKEN_HEADER) String agentToken,
                                          @PathVariable UUID id,
                                          @RequestBody CompleteRequest request) {
-        ComputeResource resource = resolve(auth);
+        ComputeResource resource = resolve(agentToken);
         TrainingSession session = requireOwned(resource, id);
         agentService.complete(session, request);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping(TrainingAgentURLS.SESSIONS + TrainingAgentURLS.ID + TrainingAgentURLS.STOPPED)
-    public ResponseEntity<Void> stopped(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth,
+    public ResponseEntity<Void> stopped(@RequestHeader(TrainingAgentURLS.TOKEN_HEADER) String agentToken,
                                         @PathVariable UUID id) {
-        ComputeResource resource = resolve(auth);
+        ComputeResource resource = resolve(agentToken);
         TrainingSession session = requireOwned(resource, id);
         agentService.stopped(session);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping(TrainingAgentURLS.SESSIONS + TrainingAgentURLS.ID + TrainingAgentURLS.ERROR)
-    public ResponseEntity<Void> error(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth,
+    public ResponseEntity<Void> error(@RequestHeader(TrainingAgentURLS.TOKEN_HEADER) String agentToken,
                                       @PathVariable UUID id,
                                       @RequestBody ErrorReport report) {
-        ComputeResource resource = resolve(auth);
+        ComputeResource resource = resolve(agentToken);
         TrainingSession session = requireOwned(resource, id);
         agentService.error(session, report);
         return ResponseEntity.noContent().build();
@@ -173,12 +175,12 @@ public class TrainingAgentController {
     /**
      * Stream the exported JSONL dataset. Fallback for when the agent can't reach
      * object storage directly (e.g. local-fs with no shared mount): authenticated
-     * by bearer token instead of a presigned URL.
+     * by the agent token header instead of a presigned URL.
      */
     @GetMapping(TrainingAgentURLS.SESSIONS + TrainingAgentURLS.ID + TrainingAgentURLS.DATASET)
-    public ResponseEntity<InputStreamResource> dataset(@RequestHeader(HttpHeaders.AUTHORIZATION) String auth,
+    public ResponseEntity<InputStreamResource> dataset(@RequestHeader(TrainingAgentURLS.TOKEN_HEADER) String agentToken,
                                                        @PathVariable UUID id) {
-        ComputeResource resource = resolve(auth);
+        ComputeResource resource = resolve(agentToken);
         requireOwned(resource, id);
         String key = DatasetExportService.datasetKey(id);
         if (!storageService.exists(key)) {
@@ -192,8 +194,9 @@ public class TrainingAgentController {
 
     // --- auth helpers --------------------------------------------------------
 
-    private ComputeResource resolve(String authorizationHeader) {
-        String token = stripBearer(authorizationHeader);
+    private ComputeResource resolve(String agentToken) {
+        // Tolerate an optional "Bearer " prefix in case a client still sends one.
+        String token = stripBearer(agentToken);
         try {
             return resourceService.requireByToken(token);
         } catch (SecurityException e) {
