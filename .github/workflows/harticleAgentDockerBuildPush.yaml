@@ -1,0 +1,150 @@
+name: Harticle Agent - Build and Push
+
+# Builds the training-agent images and pushes them to GHCR as
+# ghcr.io/devozs/harticle-agent (a container package under the devozs org — it
+# does NOT need a repo named harticle-agent, same as harticle-engine).
+#
+# Two variants from one Dockerfile.agent:
+#   :cuda  — NVIDIA GPU hosts (transformers Trainer)
+#   :gaudi — Intel Gaudi VMs   (optimum-habana on Habana's base image)
+#
+# The Gaudi base image MUST match the SynapseAI driver on the VM, so it's a
+# dispatch input rather than hardcoded. Each variant gets a moving tag
+# (cuda/gaudi) the modal/README reference, plus an immutable build-id tag.
+
+on:
+  workflow_dispatch:
+    inputs:
+      gaudi_base_image:
+        description: 'Habana base image (match the VM SynapseAI/driver version)'
+        required: true
+        default: 'vault.habana.ai/gaudi-docker/1.16.0/ubuntu22.04/habanalabs/pytorch-installer-2.2.2:latest'
+      cuda_base_image:
+        description: 'CUDA base image (torch + cuda runtime)'
+        required: true
+        default: 'pytorch/pytorch:2.3.0-cuda12.1-cudnn8-runtime'
+  push:
+    branches:
+      - 'main'
+    paths:
+      - 'harticle-engine/**'
+      - '.github/workflows/harticleAgentDockerBuildPush.yaml'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-push:
+    env:
+      REGISTRY: ghcr.io/devozs
+      IMAGE: harticle-agent
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: cuda
+            extras: training,cuda
+            # push-event default; dispatch overrides via inputs below
+            base_default: pytorch/pytorch:2.3.0-cuda12.1-cudnn8-runtime
+          - variant: gaudi
+            extras: training,gaudi
+            base_default: vault.habana.ai/gaudi-docker/1.16.0/ubuntu22.04/habanalabs/pytorch-installer-2.2.2:latest
+    steps:
+      # Gaudi's base image must match the VM's SynapseAI driver, so only build it
+      # on manual dispatch (where you supply the right base). Push events auto-build
+      # cuda only. `run: true` no-op keeps a skipped gaudi job green on push.
+      - name: Skip gaudi on push
+        id: gate
+        run: |
+          if [[ "${{ matrix.variant }}" == "gaudi" && "${{ github.event_name }}" == "push" ]]; then
+            echo "SKIP=true" >> "$GITHUB_OUTPUT"
+            echo "Skipping gaudi build on push (dispatch with a matching base image instead)."
+          else
+            echo "SKIP=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: "Checkout GitHub Action"
+        if: ${{ steps.gate.outputs.SKIP == 'false' }}
+        uses: actions/checkout@v3
+
+      - name: Resolve base image
+        if: ${{ steps.gate.outputs.SKIP == 'false' }}
+        id: base
+        run: |
+          if [[ "${{ matrix.variant }}" == "gaudi" ]]; then
+            base="${{ github.event.inputs.gaudi_base_image || matrix.base_default }}"
+          else
+            base="${{ github.event.inputs.cuda_base_image || matrix.base_default }}"
+          fi
+          echo "BASE_IMAGE=${base}" >> "$GITHUB_ENV"
+          echo "resolved base image: ${base}"
+
+      - name: Generate build ID
+        if: ${{ steps.gate.outputs.SKIP == 'false' }}
+        id: prep
+        run: |
+            branch=${GITHUB_REF##*/}
+            sha=${GITHUB_SHA::8}
+            ts=$(date +%s)
+            build_id="${{ matrix.variant }}-${branch}-${sha}-${ts}"
+            echo "BUILD_ID=${build_id}" >> $GITHUB_ENV
+            echo "BUILD_ID=${build_id}" >> $GITHUB_OUTPUT
+
+      - name: Set up QEMU
+        if: ${{ steps.gate.outputs.SKIP == 'false' }}
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        if: ${{ steps.gate.outputs.SKIP == 'false' }}
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to the Container registry
+        if: ${{ steps.gate.outputs.SKIP == 'false' }}
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: "Build"
+        if: ${{ steps.gate.outputs.SKIP == 'false' }}
+        run: |
+          docker build -f harticle-engine/Dockerfile.agent harticle-engine \
+            --build-arg BASE_IMAGE=${{ env.BASE_IMAGE }} \
+            --build-arg EXTRAS=${{ matrix.extras }} \
+            -t ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ matrix.variant }} \
+            -t ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ env.BUILD_ID }}
+
+      - name: "Docker Push"
+        if: ${{ steps.gate.outputs.SKIP == 'false' }}
+        run: |
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ matrix.variant }}
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ env.BUILD_ID }}
+
+      - name: Prune old GHCR build-id images (keep last 3 per variant)
+        if: ${{ success() && steps.gate.outputs.SKIP == 'false' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: devozs
+          PACKAGE: ${{ env.IMAGE }}
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          echo "Pruning build-id versions for ghcr.io/${OWNER}/${PACKAGE} (variant ${VARIANT})"
+          # List versions whose tags include this variant's build-id prefix, newest first,
+          # and delete all but the most recent 3. The moving tag (cuda/gaudi) is never pruned.
+          versions=$(gh api -H "Accept: application/vnd.github+json" \
+            /users/${OWNER}/packages/container/${PACKAGE}/versions \
+            --paginate -q ".[] | select(any(.metadata.container.tags[]?; startswith(\"${VARIANT}-\"))) | .id")
+          keep=3
+          count=0
+          for id in $versions; do
+            count=$((count+1))
+            if [ $count -le $keep ]; then
+              continue
+            fi
+            echo "Deleting older version id ${id}"
+            gh api --method DELETE -H "Accept: application/vnd.github+json" \
+              /users/${OWNER}/packages/container/${PACKAGE}/versions/${id} || true
+          done
