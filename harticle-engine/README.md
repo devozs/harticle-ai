@@ -39,7 +39,37 @@ AGENT_TYPE=CUDA \
 python -m harticle.training
 ```
 
-**Intel Gaudi VM** — `habana_frameworks` is not pip-installable standalone, so run the agent inside
+**Intel Gaudi VM (bare metal — recommended).** `habana_frameworks` ships with the SynapseAI
+install on the box and is version-matched to the kernel driver. Run the agent directly in that
+environment — the same one that runs Habana's own `mnist.py` quick-start — so the userspace stack
+matches the driver exactly. (A container is only safe if its base-image SynapseAI version matches
+`hl-smi` → *Driver Version*; a mismatch fails at device init with
+`RuntimeError: synStatus=26 [Generic failure] Device acquire failed.` — see the Docker note below.)
+
+```bash
+git clone git@github.com:devozs/harticle-ai.git        # skip if already cloned
+cd harticle-ai/harticle-engine
+
+# Use the SAME python that runs Habana's quick-start (has habana_frameworks + a
+# matched torch). Install ONLY the agent's extra deps WITHOUT touching the
+# Habana torch/transformers already on the box:
+$PYTHON -m pip install --no-deps -e .          # requests + the harticle package
+$PYTHON -m pip install 'datasets>=2.18' 'boto3>=1.34' optimum-habana   # only needed for a real job, not preflight
+
+# Connect + run the readiness preflight (enroll once, then heartbeat/claim).
+# localhost:18080 works if you SSH-tunnel to the mgmt host; else use its URL.
+ENROLL_CODE=HRT-xxxx \
+MGMT_URL=http://localhost:18080/api \
+AGENT_TYPE=HPU \
+$PYTHON -m harticle.training
+```
+
+Preflight needs only `requests` + `transformers` + `habana_frameworks` (all present on a Habana
+box); `datasets`/`boto3`/`optimum-habana` are imported lazily and only when a job actually runs, so
+the box can reach **READY** before they're installed. If preflight's `model.to("hpu")` errors in lazy
+mode, run with `PT_HPU_LAZY_MODE=0` (the mode the quick-start `mnist.py` uses).
+
+**Intel Gaudi VM (container — only if a published image matches your driver).** Run the agent inside
 an image built on Habana's base (`Dockerfile.agent`). Build it **on the VM** so the base image matches
 the local SynapseAI driver — `Dockerfile.agent` lives in `harticle-engine/`, so clone and `cd` first
 (this is the usual cause of `open Dockerfile.agent: no such file or directory`):

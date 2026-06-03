@@ -126,9 +126,16 @@ def _sample_workload(device_kind: str) -> dict:
     input_ids = torch.randint(0, cfg.vocab_size, (1, 4)).to(device)
     with torch.no_grad():
         out = model.generate(input_ids, max_new_tokens=8, do_sample=False)
+    if device == "hpu":
+        # Flush the lazy graph so the generate actually executes on-device (the
+        # mark_step the Habana quick-start does between steps). No-op in eager
+        # mode (PT_HPU_LAZY_MODE=0); required under the default lazy mode.
+        import habana_frameworks.torch.core as htcore
+        htcore.mark_step()
     return {
         "probeModel": "in-memory tiny-gpt2 (offline)",
         "device": device,
+        "lazyMode": os.getenv("PT_HPU_LAZY_MODE", "1"),
         "generatedTokens": int(out.shape[-1]),
     }
 
