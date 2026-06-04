@@ -53,6 +53,10 @@ export function useTrainingApi() {
   const resumeSession = (id: string) =>
     $fetch<TrainingSessionSummary>(`${base()}/sessions/${id}/resume`, { method: 'POST' })
 
+  // Re-run a FAILED/STOPPED session: creates a NEW session, returns its summary.
+  const rerunSession = (id: string) =>
+    $fetch<TrainingSessionSummary>(`${base()}/sessions/${id}/rerun`, { method: 'POST' })
+
   return {
     listResources,
     saveResource,
@@ -66,5 +70,6 @@ export function useTrainingApi() {
     sessionLogs,
     stopSession,
     resumeSession,
+    rerunSession,
   }
 }

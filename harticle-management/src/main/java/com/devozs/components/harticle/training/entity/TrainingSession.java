@@ -122,4 +122,17 @@ public class TrainingSession extends BaseEntity {
     /** Last time the assigned agent was heard from during this run; drives stall detection. */
     @Column(name = "last_agent_seen_at")
     private Date lastAgentSeenAt;
+
+    /**
+     * The session this one was re-run from (null for an original run). A re-run is
+     * a fresh session that copies the parent's exact config + dataset; the parent
+     * row is never mutated, so the attempt chain is preserved and walkable.
+     */
+    @Column(name = "parent_session_id")
+    private UUID parentSessionId;
+
+    /** 1 for an original run; the parent's attempt + 1 for each re-run. */
+    @Column(name = "attempt_number", nullable = false)
+    @lombok.Builder.Default
+    private int attemptNumber = 1;
 }

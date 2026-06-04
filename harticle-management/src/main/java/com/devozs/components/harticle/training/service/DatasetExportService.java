@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -84,6 +85,32 @@ public class DatasetExportService {
         String uri = storageService.write(key, new ByteArrayInputStream(bytes), bytes.length);
         log.info("exported {} dataset rows ({} bytes) for session {} -> {}", count, bytes.length, session.getId(), uri);
         return uri;
+    }
+
+    /**
+     * Copy an already-exported dataset to a new session's key, byte-for-byte, so a
+     * re-run trains on the EXACT same data without re-querying the corpus (which
+     * could have changed). The dataset endpoint serves per-session keys
+     * ({@code datasets/{id}.jsonl}), so a re-run can't just reuse the parent's URI
+     * string — it needs its own key populated. Returns the new session's URI, or
+     * null if the source dataset doesn't exist (caller should re-export instead).
+     */
+    public String copyDataset(UUID fromSessionId, UUID toSessionId) {
+        String src = datasetKey(fromSessionId);
+        if (!storageService.exists(src)) {
+            return null;
+        }
+        String dst = datasetKey(toSessionId);
+        try (InputStream in = storageService.read(src);
+             ByteArrayOutputStream buffer = new ByteArrayOutputStream()) {
+            in.transferTo(buffer);
+            byte[] bytes = buffer.toByteArray();
+            String uri = storageService.write(dst, new ByteArrayInputStream(bytes), bytes.length);
+            log.info("copied dataset {} -> {} ({} bytes)", src, dst, bytes.length);
+            return uri;
+        } catch (IOException e) {
+            throw new UncheckedIOException("failed to copy dataset " + src + " -> " + dst, e);
+        }
     }
 
     /** Distinct reporter ids referenced (helper kept for callers/tests). */

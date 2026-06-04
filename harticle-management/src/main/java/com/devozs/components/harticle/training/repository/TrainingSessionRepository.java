@@ -38,4 +38,24 @@ public interface TrainingSessionRepository extends JpaRepository<TrainingSession
                and (last_agent_seen_at is null or last_agent_seen_at < :cutoff)
             """, nativeQuery = true)
     List<TrainingSession> findStalledRunning(@Param("cutoff") java.util.Date cutoff);
+
+    /**
+     * Highest {@code attempt_number} across a re-run chain — the original (whose id
+     * is {@code root}) plus everything that points at it via parent_session_id.
+     * Used to assign the next attempt number on re-run. The root always has
+     * attempt 1, so coalescing a no-children result to 1 is correct.
+     */
+    @Query(value = """
+            select coalesce(max(attempt_number), 1) from training_session
+             where id = :root or parent_session_id = :root
+            """, nativeQuery = true)
+    int maxAttemptInChain(@Param("root") UUID root);
+
+    /** All sessions in one re-run chain (the root + its re-runs), oldest attempt first. */
+    @Query(value = """
+            select * from training_session
+             where id = :root or parent_session_id = :root
+             order by attempt_number
+            """, nativeQuery = true)
+    List<TrainingSession> findChain(@Param("root") UUID root);
 }

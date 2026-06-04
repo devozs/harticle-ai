@@ -12,6 +12,7 @@ public final class TrainingURLS {
     // session lifecycle actions (suffix under /sessions/{id})
     public static final String STOP = "/stop";
     public static final String RESUME = "/resume";
+    public static final String RERUN = "/rerun";
     public static final String STATUS = "/status";
     public static final String LOGS = "/logs";
 

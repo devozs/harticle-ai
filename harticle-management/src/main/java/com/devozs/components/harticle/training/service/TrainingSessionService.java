@@ -124,6 +124,61 @@ public class TrainingSessionService {
         return session;
     }
 
+    /**
+     * Re-run a FAILED or STOPPED session as a NEW PENDING session with the
+     * parent's EXACT config — same base model, hyperparams, dataset spec, type,
+     * stub/hub flags — and the SAME dataset (reuses {@code datasetUri}, no
+     * re-export) so it's a faithful re-execution. The parent row is left
+     * untouched, preserving the attempt history; the new session points back at
+     * its parent and carries an incremented {@code attemptNumber}.
+     *
+     * <p>COMPLETED runs are intentionally not re-runnable (re-run is for
+     * recovering a failed/stopped attempt, not duplicating a good one).
+     */
+    public TrainingSession rerun(UUID id) {
+        TrainingSession parent = get(id);
+        if (parent.getStatus() != TrainingStatus.FAILED && parent.getStatus() != TrainingStatus.STOPPED) {
+            throw new IllegalStateException(
+                    "only a FAILED or STOPPED session can be re-run (was " + parent.getStatus() + ")");
+        }
+        // Chain to the ORIGINAL run so all attempts share one parent and the
+        // attempt counter reflects total tries, even when re-running a re-run.
+        UUID rootId = parent.getParentSessionId() != null ? parent.getParentSessionId() : parent.getId();
+        int nextAttempt = sessionRepository.maxAttemptInChain(rootId) + 1;
+
+        TrainingSession copy = TrainingSession.builder()
+                .name(parent.getName())
+                .baseModel(parent.getBaseModel())
+                .requiredType(parent.getRequiredType())
+                .stubMode(parent.isStubMode())
+                .pushToHub(parent.isPushToHub())
+                .status(TrainingStatus.PENDING)
+                .progressPercent(0)
+                .datasetSpec(parent.getDatasetSpec())
+                .hyperparams(parent.getHyperparams())
+                .parentSessionId(rootId)
+                .attemptNumber(nextAttempt)
+                .build();
+        copy = sessionRepository.save(copy);
+
+        // The dataset endpoint serves per-session keys, so we can't just reuse the
+        // parent's URI string — the new session needs its OWN key populated. Copy
+        // the parent's bytes verbatim (same data, no re-query). If the parent never
+        // produced a dataset, export fresh so the re-run isn't stuck on a 404.
+        String copiedUri = datasetExportService.copyDataset(parent.getId(), copy.getId());
+        if (copiedUri != null) {
+            copy.setDatasetUri(copiedUri);
+            copy = sessionRepository.save(copy);
+            appendLog(copy.getId(), "INFO",
+                    "re-run of session " + id + " (attempt #" + nextAttempt + "); reused dataset from parent");
+        } else {
+            appendLog(copy.getId(), "INFO",
+                    "re-run of session " + id + " (attempt #" + nextAttempt + "); parent dataset missing, re-exporting");
+            exportDatasetAsync(copy.getId());
+        }
+        return copy;
+    }
+
     public void delete(UUID id) {
         logRepository.deleteBySessionId(id);
         sessionRepository.deleteById(id);
@@ -158,8 +213,11 @@ public class TrainingSessionService {
         }
         Long lastSeen = s.getLastAgentSeenAt() == null ? null : s.getLastAgentSeenAt().getTime();
         Long sinceSeconds = lastSeen == null ? null : (System.currentTimeMillis() - lastSeen) / 1000;
-        boolean resumable = (s.getStatus() == TrainingStatus.STOPPED || s.getStatus() == TrainingStatus.FAILED)
+        boolean terminalRecoverable = s.getStatus() == TrainingStatus.STOPPED || s.getStatus() == TrainingStatus.FAILED;
+        boolean resumable = terminalRecoverable
                 && s.getCheckpointUri() != null && !s.getCheckpointUri().isBlank();
+        // A failed/stopped run can always be re-run (fresh attempt); COMPLETED cannot.
+        boolean rerunnable = terminalRecoverable;
         return TrainingSessionSummary.builder()
                 .id(s.getId())
                 .name(s.getName())
@@ -177,6 +235,9 @@ public class TrainingSessionService {
                 .assignedResourceName(resourceName)
                 .checkpointUri(s.getCheckpointUri())
                 .resumable(resumable)
+                .rerunnable(rerunnable)
+                .parentSessionId(s.getParentSessionId())
+                .attemptNumber(s.getAttemptNumber())
                 .pushToHub(s.isPushToHub())
                 .outputModelRef(s.getOutputModelRef())
                 .errorMessage(s.getErrorMessage())

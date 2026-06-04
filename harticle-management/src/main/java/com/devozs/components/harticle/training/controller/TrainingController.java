@@ -132,4 +132,14 @@ public class TrainingController {
     public TrainingSessionSummary resumeSession(@PathVariable UUID id) {
         return sessionService.toSummary(sessionService.resume(id));
     }
+
+    /**
+     * Re-run a FAILED/STOPPED session as a fresh attempt with the same config +
+     * dataset. Returns the NEW session's summary (the original is left intact).
+     */
+    @PostMapping(TrainingURLS.SESSIONS + TrainingURLS.ID + TrainingURLS.RERUN)
+    @ResponseBody
+    public TrainingSessionSummary rerunSession(@PathVariable UUID id) {
+        return sessionService.toSummary(sessionService.rerun(id));
+    }
 }

@@ -39,8 +39,15 @@ public class TrainingSessionSummary {
 
     private String checkpointUri;
     private boolean resumable;
+    /** True when this run may be re-run as a fresh attempt (FAILED or STOPPED). */
+    private boolean rerunnable;
     private boolean pushToHub;
     private String outputModelRef;
+
+    /** The original run this is an attempt of (null for an original run). */
+    private UUID parentSessionId;
+    /** 1 for an original run; increments per re-run within the chain. */
+    private int attemptNumber;
 
     private String errorMessage;
     private ErrorType errorType;

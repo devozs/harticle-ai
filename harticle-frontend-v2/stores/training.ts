@@ -107,6 +107,15 @@ export const useTrainingStore = defineStore('training', {
       this.startMonitorPolling(id)
     },
 
+    // Re-run a FAILED/STOPPED session as a fresh attempt (new session id). The
+    // original is left intact; refresh the list so the new attempt shows up.
+    async rerunSession(id: string) {
+      const { rerunSession } = useTrainingApi()
+      const created = await rerunSession(id)
+      await this.fetchSessions()
+      return created
+    },
+
     // --- monitor (single session live view) --------------------------------
     async fetchMonitor(id: string) {
       const { sessionStatus, sessionLogs } = useTrainingApi()

@@ -80,8 +80,11 @@ export interface TrainingSessionSummary {
   assignedResourceName?: string
   checkpointUri?: string
   resumable: boolean
+  rerunnable: boolean
   pushToHub: boolean
   outputModelRef?: string
+  parentSessionId?: string
+  attemptNumber: number
   errorMessage?: string
   errorType?: string
   createdAtEpochMs?: number
