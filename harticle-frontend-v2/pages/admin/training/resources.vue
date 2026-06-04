@@ -16,50 +16,57 @@ const error = ref('')
 // One-time enrollment code shown after issue, with the right install+run snippet.
 const codeModal = ref<{ name: string, code: string, type: ComputeResourceType } | undefined>()
 
-// Repo + pip-from-git source (repo: devozs/harticle-ai, engine subdir).
-const REPO_SSH = 'git@github.com:devozs/harticle-ai.git'
-const GIT_SRC = 'git+ssh://git@github.com/devozs/harticle-ai.git#subdirectory=harticle-engine'
+// Standalone GPU/HPU agent repo (project-neutral, reused across projects).
+const REPO_SSH = 'git@github.com:devozs/gpu-agent.git'
+const GIT_SRC = 'git+ssh://git@github.com/devozs/gpu-agent.git'
 
-// CUDA laptop/host: pip install from git + run. HPU/Gaudi: clone → build the
-// Habana-based agent image → run. The Gaudi base image MUST match the VM's
-// SynapseAI driver (check `hl-smi`), so the snippet builds locally on the box
-// rather than pulling a possibly-mismatched published image.
+// CUDA laptop/host: pip install from git + run. HPU/Gaudi: clone → run the
+// bundled setup-agent.sh (bare metal — the SynapseAI userspace must match the
+// host driver exactly, which a container can break with synStatus=26 at device
+// init) → install the agent into the Habana venv → run.
 const enrollSnippet = computed(() => {
   const m = codeModal.value
   if (!m) return ''
   const mgmt = apiBase.value
   if (m.type === 'HPU') {
     return [
-      '# On the Gaudi VM. The Dockerfile.agent lives in harticle-engine/, so you',
-      '# must clone the repo and cd into it first (this avoids the common',
-      '# "open Dockerfile.agent: no such file or directory" error).',
+      '# On the Gaudi VM (bare metal — recommended over a container).',
       `git clone ${REPO_SSH}    # skip if already cloned`,
-      'cd harticle-ai/harticle-engine',
+      'cd gpu-agent',
       '',
-      '# Match <synapse>/<pytorch> to your driver — run `hl-smi` to see the',
-      '# SynapseAI version, then pick the matching tag from vault.habana.ai.',
-      'docker build -f Dockerfile.agent \\',
-      '  --build-arg BASE_IMAGE=vault.habana.ai/gaudi-docker/<synapse>/ubuntu22.04/habanalabs/pytorch-installer-<pytorch>:latest \\',
-      '  --build-arg EXTRAS=training,gaudi -t harticle-agent:gaudi .',
+      '# 1) Set up + verify the box: driver, Habana venv, MNIST smoke test.',
+      '#    Add --with-hf to also verify the Hugging Face fine-tune path.',
+      './setup-agent.sh',
       '',
-      '# Requires the Habana container runtime registered in Docker',
-      '# (`docker info | grep -i runtime` should list "habana").',
-      'docker run --rm --runtime=habana \\',
-      '  -e HABANA_VISIBLE_DEVICES=all -e OMPI_MCA_btl_vader_single_copy_mechanism=none \\',
-      `  -e ENROLL_CODE=${m.code} \\`,
-      `  -e MGMT_URL=${mgmt} \\`,
-      '  -e AGENT_TYPE=HPU \\',
-      '  harticle-agent:gaudi',
+      '# 2) Install the agent INTO the Habana venv without disturbing its',
+      '#    matched torch, plus the deps a real job needs.',
+      'source ~/habanalabs-venv/bin/activate',
+      'pip install --no-deps -e .',
+      "pip install 'datasets>=2.18' 'boto3>=1.34' optimum-habana",
+      '',
+      '# 3) Enroll once (foreground) to cache the bearer token. PT_HPU_LAZY_MODE=1',
+      '#    keeps lazy mode (SynapseAI 1.24 defaults to eager). Ctrl+C once it',
+      '#    logs "agent up ... ready=True".',
+      'export PT_HPU_LAZY_MODE=1',
+      `ENROLL_CODE=${m.code} \\`,
+      `MGMT_URL=${mgmt} \\`,
+      'AGENT_TYPE=HPU \\',
+      'python -m devozs_gpu_agent',
+      '',
+      '# 4) Keep it running as a service (starts on boot, restarts on crash, and',
+      '#    stays claimable after you log out). The token is cached, so no code',
+      `#    needed. Set MGMT_URL=${mgmt} / AGENT_TYPE=HPU in the env file it installs.`,
+      './deploy/install-service.sh',
     ].join('\n')
   }
   return [
     '# On the GPU box (Python 3.10+, git SSH access to the repo):',
-    `pip install 'harticle[training,cuda] @ ${GIT_SRC}'`,
+    `pip install 'devozs-gpu-agent[training,cuda] @ ${GIT_SRC}'`,
     '',
     `ENROLL_CODE=${m.code} \\`,
     `MGMT_URL=${mgmt} \\`,
     'AGENT_TYPE=CUDA \\',
-    'python -m harticle.training',
+    'python -m devozs_gpu_agent',
   ].join('\n')
 })
 

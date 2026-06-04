@@ -33,6 +33,29 @@ const readinessBadge = computed(() => {
   }
 })
 
+// The agent reports specs as a free-form JSON string (deviceCount/devices[]/
+// deviceName, shape varies by enroll vs. preflight). Parse defensively and
+// surface the accelerator card count + a device name when present.
+const caps = computed<Record<string, any>>(() => {
+  try {
+    return props.resource.capabilities ? JSON.parse(props.resource.capabilities) : {}
+  } catch {
+    return {}
+  }
+})
+
+const cardCount = computed<number | undefined>(() => {
+  const c = caps.value
+  if (typeof c.deviceCount === 'number') return c.deviceCount
+  if (Array.isArray(c.devices)) return c.devices.length
+  return undefined
+})
+
+const deviceName = computed<string | undefined>(() => {
+  const c = caps.value
+  return c.deviceName ?? (Array.isArray(c.devices) ? c.devices[0]?.name : undefined)
+})
+
 </script>
 
 <template>
@@ -43,6 +66,11 @@ const readinessBadge = computed(() => {
           <span class="inline-block h-2.5 w-2.5 rounded-full" :class="online ? statusColor : 'bg-gray-300'" />
           <span class="font-semibold text-gray-900">{{ resource.name }}</span>
           <span class="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{{ resource.type }}</span>
+          <span
+            v-if="cardCount !== undefined"
+            class="rounded bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-800"
+            :title="deviceName ?? ''"
+          >{{ cardCount }} {{ resource.type === 'HPU' ? 'HPU' : 'GPU' }}{{ cardCount === 1 ? '' : 's' }}</span>
         </div>
         <div class="mt-1 flex items-center gap-2 text-sm text-gray-500">
           <span>{{ resource.status }}<template v-if="!resource.enrolled"> · not enrolled</template></span>
@@ -92,6 +120,12 @@ const readinessBadge = computed(() => {
       <div>
         <dt class="text-gray-400">Current session</dt>
         <dd class="truncate">{{ resource.currentSessionId ?? '—' }}</dd>
+      </div>
+      <div v-if="cardCount !== undefined">
+        <dt class="text-gray-400">Accelerators</dt>
+        <dd class="truncate" :title="deviceName ?? ''">
+          {{ cardCount }}× {{ deviceName ?? resource.type }}
+        </dd>
       </div>
     </dl>
   </div>
