@@ -17,6 +17,12 @@ const error = ref('')
 // One-time enrollment code shown after issue, with the right install+run snippet.
 const codeModal = ref<{ name: string, code: string, type: ComputeResourceType } | undefined>()
 
+// Management URL the agent should dial. Prefilled from the BE address the FE
+// itself uses, but EDITABLE: in dev that's localhost:8080 (wrong for a remote
+// box) and a Gaudi VM must point at the management VM's reachable address+port
+// (e.g. http://10.111.56.26/api). The snippet + sanity check below track this.
+const mgmtUrl = ref('')
+
 // Standalone GPU/HPU agent repo (project-neutral, reused across projects).
 const REPO_SSH = 'git@github.com:devozs/gpu-agent.git'
 const GIT_SRC = 'git+ssh://git@github.com/devozs/gpu-agent.git'
@@ -28,7 +34,7 @@ const GIT_SRC = 'git+ssh://git@github.com/devozs/gpu-agent.git'
 const enrollSnippet = computed(() => {
   const m = codeModal.value
   if (!m) return ''
-  const mgmt = apiBase.value
+  const mgmt = mgmtUrl.value || apiBase.value
   if (m.type === 'HPU') {
     return [
       '# On the Gaudi VM (bare metal — recommended over a container).',
@@ -71,11 +77,16 @@ const enrollSnippet = computed(() => {
   ].join('\n')
 })
 
-// Individually-copyable bits, for when the user already has the agent set up and
-// only needs the new code (or to point it at a different management URL).
-const enrollCodeVar = computed(() =>
-  codeModal.value ? `ENROLL_CODE=${codeModal.value.code}` : '')
-const mgmtUrlVar = computed(() => `MGMT_URL=${apiBase.value}`)
+// Just the bare code (no ENROLL_CODE= prefix) so it's a clean one-click copy.
+const enrollCodeVar = computed(() => codeModal.value?.code ?? '')
+
+// A reachability sanity check to paste on the box BEFORE enrolling: a 400/401 back
+// means the path works (server rejected the empty body); a connection refused /
+// timeout means the management URL/port is wrong or blocked.
+const sanityCheck = computed(() => {
+  const base = (mgmtUrl.value || apiBase.value).replace(/\/$/, '')
+  return `curl -sS -m 5 ${base}/training/agent/heartbeat -X POST -H 'Content-Type: application/json' -d '{}' ; echo`
+})
 
 // Light poll so VERIFYING → READY (and heartbeat status) refresh live.
 let poll: ReturnType<typeof setInterval> | undefined
@@ -106,6 +117,9 @@ async function save() {
 
 async function enroll(resource: ComputeResource) {
   const res = await store.issueEnrollmentCode(resource.id)
+  // Prefill the management URL from the BE address the FE uses; the admin edits it
+  // to the box-reachable address (a remote VM can't reach a localhost default).
+  mgmtUrl.value = apiBase.value
   codeModal.value = { name: resource.name, code: res.enrollmentCode, type: resource.type }
 }
 
@@ -221,8 +235,9 @@ function copy(text: string) {
         </p>
         <pre class="mt-3 overflow-auto rounded-lg bg-gray-900 p-4 text-xs leading-relaxed text-green-300">{{ enrollSnippet }}</pre>
 
-        <!-- Quick-copy individual bits, for an already-configured box that just
-             needs the new code or a different management URL. -->
+        <!-- Quick-copy individual bits. The management URL is EDITABLE — set it to
+             the address the box can reach (a remote VM can't use a localhost
+             default); the snippet + sanity check above/below update as you type. -->
         <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
           <div>
             <label class="text-xs font-medium text-gray-500">Enrollment code</label>
@@ -243,22 +258,44 @@ function copy(text: string) {
             </div>
           </div>
           <div>
-            <label class="text-xs font-medium text-gray-500">Target management URL</label>
+            <label class="text-xs font-medium text-gray-500">Management URL (the box must reach this)</label>
             <div class="mt-1 flex">
               <input
-                :value="mgmtUrlVar"
-                readonly
-                class="w-full rounded-l-lg border border-gray-300 bg-gray-50 px-3 py-1.5 font-mono text-xs text-gray-800"
+                v-model="mgmtUrl"
+                placeholder="http://10.111.56.26/api"
+                class="w-full rounded-l-lg border border-gray-300 bg-white px-3 py-1.5 font-mono text-xs text-gray-800 focus:border-cyan-500 focus:ring-cyan-500"
                 @focus="(e) => (e.target as HTMLInputElement).select()"
               >
               <button
                 type="button"
                 class="rounded-r-lg border border-l-0 border-gray-300 px-3 py-1.5 text-xs text-cyan-800 hover:bg-cyan-50"
-                @click="copy(mgmtUrlVar)"
+                @click="copy(mgmtUrl)"
               >
                 Copy
               </button>
             </div>
+          </div>
+        </div>
+
+        <!-- Reachability sanity check: run on the box BEFORE enrolling. -->
+        <div class="mt-3">
+          <label class="text-xs font-medium text-gray-500">
+            Sanity check (run on the box first — a 400/401 means reachable; refused/timeout means wrong URL or blocked port)
+          </label>
+          <div class="mt-1 flex">
+            <input
+              :value="sanityCheck"
+              readonly
+              class="w-full rounded-l-lg border border-gray-300 bg-gray-50 px-3 py-1.5 font-mono text-xs text-gray-800"
+              @focus="(e) => (e.target as HTMLInputElement).select()"
+            >
+            <button
+              type="button"
+              class="rounded-r-lg border border-l-0 border-gray-300 px-3 py-1.5 text-xs text-cyan-800 hover:bg-cyan-50"
+              @click="copy(sanityCheck)"
+            >
+              Copy
+            </button>
           </div>
         </div>
 
