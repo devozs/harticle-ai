@@ -15,6 +15,10 @@ const busy = ref(false)
 // this same page component, so onMounted won't fire again; without this watch the
 // poller stays bound to the previous session and the screen/logs never update.
 watch(sessionId, (id) => {
+  // Polling uses setInterval — client only. The immediate run fires during setup,
+  // which on SSR is the server, so guard it (Nuxt warns otherwise and the timer
+  // would never fire server-side anyway).
+  if (!import.meta.client) return
   store.stopMonitorPolling()
   if (id) {
     store.startMonitorPolling(id)
