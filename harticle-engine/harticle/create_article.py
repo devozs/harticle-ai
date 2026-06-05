@@ -142,18 +142,14 @@ def create_article(env_vars: EnvVariables, data_kube_client: DataKubeJobClient):
         print("" + 100 * '-')
         if i == 0:
             print("Sending ADD_METADATA_MESSAGE")
-            title = ""
-            sub_title = ""
-            content = ""
-
-            full_text = text.split(".")
-            if full_text is not None and len(full_text) > 2:
-                title = text.split(".")[0]
-                sub_title = text.split(".")[1]
-                for j in range(len(full_text)):
-                    if j == 0 or j == 1:
-                        continue
-                    content += full_text[j] + "\n"
+            # Parse into title / sub-title / paragraph with the same helper the
+            # /engine/infer path uses, so the article flow and the admin inference
+            # test agree on how a sample is structured.
+            from harticle.inference import split_article
+            parsed = split_article(text)
+            title = parsed["title"]
+            sub_title = parsed["subTitle"]
+            content = parsed["paragraph"]
             print("title: {} ({})".format(title, len(title)))
             print("sub_title: {} ({})".format(sub_title, len(sub_title)))
             print("content: {} ({})".format(content, len(content)))

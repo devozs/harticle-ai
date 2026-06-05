@@ -57,6 +57,22 @@ public class TrainingSession extends BaseEntity {
     @Column(name = "dataset_spec", columnDefinition = "jsonb")
     private String datasetSpec;
 
+    /**
+     * The single reporter this model was trained for (null = a general model over all
+     * reporters). First-class promotion of the {@code reporterIds} dataset scope: it
+     * keeps history readable, survives the remote→local model fetch (lives on this
+     * host-local row, not in the moved weight files), and lets the inference reporter
+     * picker offer only reporters that actually have a model. Loose UUID ref (no FK),
+     * matching {@code assignedResourceId}'s style.
+     */
+    @Column(name = "reporter_id")
+    private UUID reporterId;
+
+    /** Snapshot of the reporter's display name at train time (stays correct after a
+     * later rename/delete), mirroring {@code scraped_article.reporter_name}. */
+    @Column(name = "reporter_name", length = 128)
+    private String reporterName;
+
     /** Storage URI of the exported JSONL once materialized (null until export runs). */
     @Column(name = "dataset_uri", length = 1024)
     private String datasetUri;

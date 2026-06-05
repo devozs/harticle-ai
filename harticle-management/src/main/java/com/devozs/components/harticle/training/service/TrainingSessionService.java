@@ -1,6 +1,7 @@
 package com.devozs.components.harticle.training.service;
 
 import com.devozs.components.harticle.training.domain.ModelFetchStatus;
+import com.devozs.components.harticle.training.domain.ModelReachability;
 import com.devozs.components.harticle.training.domain.TrainingStatus;
 import com.devozs.components.harticle.training.dto.TrainingLogDto;
 import com.devozs.components.harticle.training.dto.TrainingSessionDto;
@@ -9,6 +10,8 @@ import com.devozs.components.harticle.training.domain.ComputeResourceStatus;
 import com.devozs.components.harticle.training.entity.ComputeResource;
 import com.devozs.components.harticle.training.entity.TrainingLog;
 import com.devozs.components.harticle.training.entity.TrainingSession;
+import com.devozs.components.harticle.scraper.entity.ScrapeReporter;
+import com.devozs.components.harticle.scraper.repository.ScrapeReporterRepository;
 import com.devozs.components.harticle.training.repository.ComputeResourceRepository;
 import com.devozs.components.harticle.training.repository.TrainingLogRepository;
 import com.devozs.components.harticle.training.repository.TrainingSessionRepository;
@@ -42,6 +45,7 @@ public class TrainingSessionService {
     private final ComputeResourceService resourceService;
     private final DatasetExportService datasetExportService;
     private final StorageService storageService;
+    private final ScrapeReporterRepository reporterRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public TrainingSessionService(TrainingSessionRepository sessionRepository,
@@ -49,13 +53,15 @@ public class TrainingSessionService {
                                   ComputeResourceRepository resourceRepository,
                                   ComputeResourceService resourceService,
                                   DatasetExportService datasetExportService,
-                                  StorageService storageService) {
+                                  StorageService storageService,
+                                  ScrapeReporterRepository reporterRepository) {
         this.sessionRepository = sessionRepository;
         this.logRepository = logRepository;
         this.resourceRepository = resourceRepository;
         this.resourceService = resourceService;
         this.datasetExportService = datasetExportService;
         this.storageService = storageService;
+        this.reporterRepository = reporterRepository;
     }
 
     public List<TrainingSession> getAll() {
@@ -77,6 +83,14 @@ public class TrainingSessionService {
      * finishes, but claim+setup overlaps the export so this is rarely a wait.
      */
     public TrainingSession create(TrainingSessionDto dto) {
+        // A model scoped to exactly one reporter is a per-reporter ("dedicated") model;
+        // promote that reporter to first-class columns (id + name snapshot) so history,
+        // re-train, and the inference picker can rely on it without re-parsing JSON.
+        // Empty/multi selection = a general model (both columns null).
+        UUID reporterId = singleReporterId(dto.getReporterIds());
+        String reporterName = reporterId == null ? null
+                : reporterRepository.findById(reporterId).map(ScrapeReporter::getDisplayName).orElse(null);
+
         TrainingSession session = TrainingSession.builder()
                 .name(dto.getName())
                 .baseModel(dto.getBaseModel())
@@ -87,10 +101,24 @@ public class TrainingSessionService {
                 .progressPercent(0)
                 .datasetSpec(buildDatasetSpec(dto))
                 .hyperparams(buildHyperparams(dto))
+                .reporterId(reporterId)
+                .reporterName(reporterName)
                 .build();
         session = sessionRepository.save(session);
         exportDatasetAsync(session.getId());
         return session;
+    }
+
+    /** The reporter id when a dataset scope names exactly one reporter, else null. */
+    private static UUID singleReporterId(List<String> reporterIds) {
+        if (reporterIds == null || reporterIds.size() != 1) {
+            return null;
+        }
+        try {
+            return UUID.fromString(reporterIds.get(0));
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     @Async
@@ -170,6 +198,8 @@ public class TrainingSessionService {
                 .progressPercent(0)
                 .datasetSpec(parent.getDatasetSpec())
                 .hyperparams(parent.getHyperparams())
+                .reporterId(parent.getReporterId())
+                .reporterName(parent.getReporterName())
                 .parentSessionId(rootId)
                 .attemptNumber(nextAttempt)
                 .build();
@@ -300,6 +330,35 @@ public class TrainingSessionService {
     }
 
     /**
+     * Where this completed session's model can be loaded from — see {@link ModelReachability}.
+     * Derived live (no stored column) from the output ref, local presence, and the state
+     * of the box that trained it, so it always reflects the current world: when a training
+     * box is removed, its un-fetched {@code file://} models flip to ORPHANED automatically.
+     */
+    public ModelReachability modelReachability(TrainingSession s) {
+        String ref = s.getOutputModelRef();
+        if (s.getStatus() != TrainingStatus.COMPLETED || ref == null || ref.isBlank()) {
+            return ModelReachability.ORPHANED;
+        }
+        if (!ref.startsWith("file://")) {
+            return ModelReachability.PORTABLE;
+        }
+        if (isModelAvailableLocally(s)) {
+            return ModelReachability.LOCAL_AVAILABLE;
+        }
+        // file:// not on this host: only its own training box still holds the files, and
+        // only if that box is still registered and alive.
+        UUID resourceId = s.getAssignedResourceId();
+        if (resourceId != null) {
+            ComputeResource box = resourceRepository.findById(resourceId).orElse(null);
+            if (resourceService.isLive(box)) {
+                return ModelReachability.REMOTE_ONLY;
+            }
+        }
+        return ModelReachability.ORPHANED;
+    }
+
+    /**
      * Admin asks to bring a remotely-trained model's files down to this host. Since
      * the agent is outbound-only, we flag the box that trained it; the agent sees
      * the flag on its next heartbeat and pushes the files up. No-op if already local.
@@ -395,6 +454,8 @@ public class TrainingSessionService {
                 .lastLoss(s.getLastLoss())
                 .assignedResourceId(s.getAssignedResourceId())
                 .assignedResourceName(resourceName)
+                .reporterId(s.getReporterId())
+                .reporterName(s.getReporterName())
                 .checkpointUri(s.getCheckpointUri())
                 .resumable(resumable)
                 .rerunnable(rerunnable)
@@ -403,6 +464,7 @@ public class TrainingSessionService {
                 .pushToHub(s.isPushToHub())
                 .outputModelRef(s.getOutputModelRef())
                 .modelAvailableLocal(s.getStatus() == TrainingStatus.COMPLETED && isModelAvailableLocally(s))
+                .modelReachability(s.getStatus() == TrainingStatus.COMPLETED ? modelReachability(s) : null)
                 .modelFetchStatus(s.getModelFetchStatus())
                 .errorMessage(s.getErrorMessage())
                 .errorType(s.getErrorType())

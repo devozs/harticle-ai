@@ -29,8 +29,8 @@ public class InferenceRunSummary {
     private UUID assignedResourceId;
     private String assignedResourceName;
 
-    /** Decoded generated samples (null until COMPLETED). */
-    private List<String> outputs;
+    /** Decoded generated samples, parsed into title/sub-title/paragraph (null until COMPLETED). */
+    private List<ArticleSample> outputs;
 
     private String errorMessage;
     private ErrorType errorType;

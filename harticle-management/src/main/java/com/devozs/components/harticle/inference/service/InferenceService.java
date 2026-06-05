@@ -2,6 +2,7 @@ package com.devozs.components.harticle.inference.service;
 
 import com.devozs.components.common.domain.ErrorType;
 import com.devozs.components.harticle.inference.domain.InferenceStatus;
+import com.devozs.components.harticle.inference.dto.ArticleSample;
 import com.devozs.components.harticle.inference.dto.EngineInferRequest;
 import com.devozs.components.harticle.inference.dto.EngineInferResponse;
 import com.devozs.components.harticle.inference.dto.InferenceModelOption;
@@ -10,6 +11,7 @@ import com.devozs.components.harticle.inference.dto.InferenceRunDto;
 import com.devozs.components.harticle.inference.dto.InferenceRunSummary;
 import com.devozs.components.harticle.inference.entity.InferenceRun;
 import com.devozs.components.harticle.inference.repository.InferenceRunRepository;
+import com.devozs.components.harticle.training.domain.ModelReachability;
 import com.devozs.components.harticle.training.domain.TrainingStatus;
 import com.devozs.components.harticle.training.entity.ComputeResource;
 import com.devozs.components.harticle.training.entity.TrainingSession;
@@ -90,6 +92,9 @@ public class InferenceService {
                         .baseModel(s.getBaseModel())
                         .outputModelRef(s.getOutputModelRef())
                         .availableLocal(sessionService.isModelAvailableLocally(s))
+                        .reachability(sessionService.modelReachability(s))
+                        .reporterId(s.getReporterId())
+                        .reporterName(s.getReporterName())
                         .build())
                 .toList();
     }
@@ -107,6 +112,14 @@ public class InferenceService {
         if (source.getStatus() != TrainingStatus.COMPLETED
                 || source.getOutputModelRef() == null || source.getOutputModelRef().isBlank()) {
             throw new IllegalStateException("source session has no trained model to test (must be COMPLETED with an output model)");
+        }
+
+        // An orphaned model's files were lost when its training box was removed; it can't
+        // run anywhere. Reject for every target so the run never queues against nothing.
+        ModelReachability reachability = sessionService.modelReachability(source);
+        if (reachability == ModelReachability.ORPHANED) {
+            throw new IllegalStateException(
+                    "this model's files were lost when its training box was removed; it can no longer be run — re-train it");
         }
 
         boolean local = TARGET_LOCAL.equalsIgnoreCase(dto.getTarget());
@@ -129,6 +142,14 @@ public class InferenceService {
         if (!local) {
             ComputeResource resource = resourceRepository.findById(UUID.fromString(dto.getTarget()))
                     .orElseThrow(() -> new NoSuchElementException("compute resource not found: " + dto.getTarget()));
+            // A file:// model lives only on the box that trained it (the claim queue matches
+            // by type, not by box). Pin a REMOTE_ONLY model to its own box; a PORTABLE model
+            // (s3/hub) the engine can resolve, so any live matching box is fine.
+            if (reachability == ModelReachability.REMOTE_ONLY
+                    && !resource.getId().equals(source.getAssignedResourceId())) {
+                throw new IllegalStateException(
+                        "this model's files only exist on the box that trained it — run it on that box, or fetch it to local and run on CPU");
+            }
             builder.requiredType(resource.getType());
         }
 
@@ -190,6 +211,25 @@ public class InferenceService {
         }
     }
 
+    // --- reaper (GPU/HPU runs no live agent will ever claim) -----------------
+
+    /**
+     * Fail GPU/HPU runs stuck PENDING past {@code timeoutSeconds} — no live agent of
+     * their type claimed them (typically their target box was removed). Without this
+     * the FE polls such a run forever. Returns how many were reaped. Invoked by the
+     * training reaper's periodic sweep.
+     */
+    public int reapStalledPending(long timeoutSeconds) {
+        Date cutoff = new Date(System.currentTimeMillis() - timeoutSeconds * 1000);
+        List<InferenceRun> stalled = runRepository.findStalledPending(cutoff);
+        for (InferenceRun run : stalled) {
+            log.warn("reaping inference run {} — PENDING with no live agent for >{}s", run.getId(), timeoutSeconds);
+            finish(run, null, ErrorType.COMMUNICATION,
+                    "no live GPU/HPU agent claimed this run within " + timeoutSeconds + "s");
+        }
+        return stalled.size();
+    }
+
     // --- agent callback (GPU/HPU path) ---------------------------------------
 
     public void recordResult(InferenceRun run, InferenceResultReport report) {
@@ -204,7 +244,7 @@ public class InferenceService {
         freeResource(run);
     }
 
-    private void finish(InferenceRun staleRun, List<String> outputs, ErrorType errorType, String message) {
+    private void finish(InferenceRun staleRun, List<ArticleSample> outputs, ErrorType errorType, String message) {
         // Reload fresh by id: the entity passed in was detached before a long
         // generation (LOCAL @Async / GPU callback), so its @Version is stale and
         // saving it directly throws OptimisticLockingFailure. Reloading also drops
@@ -302,11 +342,32 @@ public class InferenceService {
     // --- JSON helpers --------------------------------------------------------
 
     private String buildParams(InferenceRunDto dto) {
+        // The absurdity dial derives temperature + maxLength; an explicit value for
+        // either still wins (advanced override). Derivation lives here so the future
+        // end-user app, which only sends absurdity, gets the same behaviour.
+        Integer temperature = dto.getTemperature();
+        Integer maxLength = dto.getMaxLength();
+        if (dto.getAbsurdity() != null) {
+            if (temperature == null) temperature = temperatureForAbsurdity(dto.getAbsurdity());
+            if (maxLength == null) maxLength = maxLengthForAbsurdity(dto.getAbsurdity());
+        }
         ObjectNode node = objectMapper.createObjectNode();
-        node.put("temperature", dto.getTemperature() == null ? DEFAULT_TEMPERATURE : dto.getTemperature());
-        node.put("maxLength", dto.getMaxLength() == null ? DEFAULT_MAX_LENGTH : dto.getMaxLength());
+        node.put("temperature", temperature == null ? DEFAULT_TEMPERATURE : temperature);
+        node.put("maxLength", maxLength == null ? DEFAULT_MAX_LENGTH : maxLength);
         node.put("numReturnSequences", dto.getNumReturnSequences() == null ? DEFAULT_NUM_RETURN : dto.getNumReturnSequences());
         return node.toString();
+    }
+
+    /** Map absurdity 0..100 to the engine's 0..100 temperature scale: tame≈40 → wild≈100. */
+    static int temperatureForAbsurdity(int absurdity) {
+        int a = Math.max(0, Math.min(100, absurdity));
+        return (int) Math.round(40 + a * 0.6);
+    }
+
+    /** Map absurdity 0..100 to a generated length: tame≈256 tokens → wild≈640. */
+    static int maxLengthForAbsurdity(int absurdity) {
+        int a = Math.max(0, Math.min(100, absurdity));
+        return (int) Math.round(256 + a * 3.84);
     }
 
     int readParam(InferenceRun run, String field, int fallback) {
@@ -319,7 +380,7 @@ public class InferenceService {
         }
     }
 
-    private String writeOutputs(List<String> outputs) {
+    private String writeOutputs(List<ArticleSample> outputs) {
         try {
             return objectMapper.writeValueAsString(outputs == null ? List.of() : outputs);
         } catch (Exception e) {
@@ -328,7 +389,12 @@ public class InferenceService {
         }
     }
 
-    private List<String> readOutputs(String json) {
+    /**
+     * Read stored outputs as structured samples. Reads defensively: a run created
+     * before structured output was stored as a JSON array of plain strings — map
+     * each such string into {@code {paragraph: <string>}} so old runs still render.
+     */
+    private List<ArticleSample> readOutputs(String json) {
         if (json == null || json.isBlank()) {
             return null;
         }
@@ -337,8 +403,14 @@ public class InferenceService {
             if (!node.isArray()) {
                 return null;
             }
-            List<String> out = new ArrayList<>();
-            node.forEach(n -> out.add(n.asText()));
+            List<ArticleSample> out = new ArrayList<>();
+            for (var n : node) {
+                if (n.isTextual()) {
+                    out.add(ArticleSample.builder().title("").subTitle("").paragraph(n.asText()).build());
+                } else {
+                    out.add(objectMapper.treeToValue(n, ArticleSample.class));
+                }
+            }
             return out;
         } catch (Exception e) {
             log.warn("could not parse inference outputs: {}", json, e);

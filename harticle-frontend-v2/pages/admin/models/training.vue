@@ -5,8 +5,11 @@ import type { TrainingSessionDto, TrainingSessionSummary } from '~/types/trainin
 definePageMeta({ layout: 'admin', middleware: 'admin' })
 
 const store = useTrainingStore()
+const scraperStore = useScraperStore()
 const { confirm } = useConfirm()
 const { sessions, resources } = storeToRefs(store)
+// Reporters power the per-reporter ("dedicated model") training scope picker.
+const { reporters } = storeToRefs(scraperStore)
 
 const drawerOpen = ref(false)
 const draft = ref<TrainingSessionDto>(emptyDraft())
@@ -58,7 +61,10 @@ function emptyDraft(): TrainingSessionDto {
   }
 }
 
-onMounted(() => store.fetchSessions())
+onMounted(() => {
+  store.fetchSessions()
+  scraperStore.fetchReporters()
+})
 
 function openCreate() {
   draft.value = emptyDraft()
@@ -129,6 +135,8 @@ async function fetchLocal(session: TrainingSessionSummary) {
 // isn't mid-fetch. A REQUESTED/UPLOADING run shows progress text instead.
 function fetchLabel(s: TrainingSessionSummary): string | undefined {
   if (s.status !== 'COMPLETED' || !s.outputModelRef || s.modelAvailableLocal) return undefined
+  // The files are gone with the training box — nothing to fetch (the server errors too).
+  if (s.modelReachability === 'ORPHANED') return undefined
   if (s.modelFetchStatus === 'REQUESTED') return 'Fetch queued…'
   if (s.modelFetchStatus === 'UPLOADING') return 'Fetching…'
   if (s.modelFetchStatus === 'FAILED') return 'Fetch failed — retry'
@@ -213,6 +221,11 @@ function statusBadge(status: string) {
                 @click="fetchLocal(s)"
               >{{ fetching === s.id ? 'Fetching…' : fetchLabel(s) }}</button>
               <span
+                v-else-if="s.status === 'COMPLETED' && s.modelReachability === 'ORPHANED'"
+                class="ml-3 text-xs font-medium text-red-700"
+                title="The training box was removed; this model's files are lost and it can no longer be run or fetched. Re-train it."
+              >Model lost — training box removed</span>
+              <span
                 v-else-if="s.status === 'COMPLETED' && s.modelAvailableLocal"
                 class="ml-3 text-xs text-green-700"
                 title="Model files are on this host — testable on Local (CPU)"
@@ -243,6 +256,7 @@ function statusBadge(status: string) {
             v-model:resource-id="targetResourceId"
             v-model:valid="formValid"
             :resources="resources"
+            :reporters="reporters"
           />
         </div>
 

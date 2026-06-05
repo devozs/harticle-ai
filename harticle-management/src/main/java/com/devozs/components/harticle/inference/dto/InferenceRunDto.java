@@ -23,6 +23,13 @@ public class InferenceRunDto {
     private String target;
     private String prompt;
 
+    /**
+     * Single "absurdity" dial (0..100): the simple end-user-facing knob. When set,
+     * the server derives {@code temperature} and {@code maxLength} from it. Explicit
+     * {@code temperature}/{@code maxLength} still win (advanced override).
+     */
+    private Integer absurdity;
+
     private Integer temperature;          // 0..100 (matches the engine's /100 convention)
     private Integer maxLength;
     private Integer numReturnSequences;

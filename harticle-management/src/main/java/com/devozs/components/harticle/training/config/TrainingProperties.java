@@ -24,6 +24,12 @@ public class TrainingProperties {
     /** TTL for presigned dataset/checkpoint download URLs handed to the agent. */
     private long presignTtlMinutes = 720;
 
+    /**
+     * A GPU/HPU inference run left PENDING for this many seconds (no live agent of its
+     * type ever claimed it — e.g. its box was removed) is failed so the FE stops polling.
+     */
+    private long inferenceClaimTimeoutSeconds = 120;
+
     /** How often the reaper sweeps for stalled sessions / offline resources (ms). */
     private long reaperIntervalMs = 30000;
 }

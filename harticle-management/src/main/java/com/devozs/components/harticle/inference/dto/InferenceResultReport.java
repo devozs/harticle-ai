@@ -18,7 +18,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class InferenceResultReport {
-    private List<String> outputs;
+    private List<ArticleSample> outputs;
     private ErrorType errorType;
     private String message;
 }

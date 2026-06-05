@@ -1,6 +1,7 @@
 package com.devozs.components.harticle.training.service;
 
 import com.devozs.components.common.domain.ErrorType;
+import com.devozs.components.harticle.inference.service.InferenceService;
 import com.devozs.components.harticle.training.config.TrainingProperties;
 import com.devozs.components.harticle.training.domain.TrainingStatus;
 import com.devozs.components.harticle.training.entity.ComputeResource;
@@ -31,23 +32,27 @@ public class TrainingReaperService {
     private final ComputeResourceRepository resourceRepository;
     private final ComputeResourceService resourceService;
     private final TrainingSessionService sessionService;
+    private final InferenceService inferenceService;
     private final TrainingProperties properties;
 
     public TrainingReaperService(TrainingSessionRepository sessionRepository,
                                  ComputeResourceRepository resourceRepository,
                                  ComputeResourceService resourceService,
                                  TrainingSessionService sessionService,
+                                 InferenceService inferenceService,
                                  TrainingProperties properties) {
         this.sessionRepository = sessionRepository;
         this.resourceRepository = resourceRepository;
         this.resourceService = resourceService;
         this.sessionService = sessionService;
+        this.inferenceService = inferenceService;
         this.properties = properties;
     }
 
     @Scheduled(fixedDelayString = "${harticle.training.reaper-interval-ms:30000}")
     public void reap() {
         reapStalledSessions();
+        inferenceService.reapStalledPending(properties.getInferenceClaimTimeoutSeconds());
         resourceService.markStaleOffline();
     }
 

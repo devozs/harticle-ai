@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { ComputeResource, ComputeResourceType, TrainingSessionDto } from '~/types/training'
+import type { ScrapeReporter } from '~/types/scraper'
 
-const props = defineProps<{ resources: ComputeResource[] }>()
+const props = defineProps<{ resources: ComputeResource[], reporters: ScrapeReporter[] }>()
 
 // v-model:modelValue is the draft DTO.
 const model = defineModel<TrainingSessionDto>({ required: true })
@@ -36,6 +37,18 @@ function resourceLabel(r: ComputeResource): string {
     : r.status.toLowerCase()
   return `${r.name} — ${state}`
 }
+
+// Per-reporter scope is single-select in the UI (a "dedicated model" is trained
+// for one reporter), but the DTO/export contract is a list. Map the <select> to
+// reporterIds[0]; empty = a general model over all reporters. Reporters sorted by
+// display name for a stable, scannable dropdown.
+const sortedReporters = computed(() =>
+  [...props.reporters].sort((a, b) => a.displayName.localeCompare(b.displayName)))
+
+const reporterId = computed<string>({
+  get: () => model.value.reporterIds?.[0] ?? '',
+  set: (id) => { model.value.reporterIds = id ? [id] : [] },
+})
 
 // When the compute type changes, drop a selection that no longer matches.
 watch(() => model.value.requiredType, () => {
@@ -113,6 +126,18 @@ onBeforeUnmount(() => { if (hfTimer) clearTimeout(hfTimer) })
       <span class="font-medium text-gray-700">Base HF model</span>
       <input v-model="model.baseModel" type="text" class="rounded-lg border border-gray-300 px-3 py-2" placeholder="Norod78/hebrew-gpt_neo-small">
       <span v-if="hfBadge.text" class="text-xs" :class="hfBadge.cls">{{ hfBadge.text }}</span>
+    </label>
+
+    <label class="flex flex-col gap-1 text-sm sm:col-span-2">
+      <span class="font-medium text-gray-700">Reporter (dataset scope)</span>
+      <select v-model="reporterId" class="rounded-lg border border-gray-300 px-3 py-2">
+        <option value="">All reporters (general model)</option>
+        <option v-for="r in sortedReporters" :key="r.id" :value="r.id">{{ r.displayName }}</option>
+      </select>
+      <span class="text-xs text-gray-400">
+        Train a dedicated model in one reporter's voice (uses only that reporter's articles), or leave on
+        “All reporters” to train the general model over the whole corpus.
+      </span>
     </label>
 
     <label class="flex flex-col gap-1 text-sm">

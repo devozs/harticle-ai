@@ -15,6 +15,8 @@ export type TrainingStatus =
 
 export type ModelFetchStatus = 'NONE' | 'REQUESTED' | 'UPLOADING' | 'AVAILABLE' | 'FAILED'
 
+export type ModelReachability = 'PORTABLE' | 'LOCAL_AVAILABLE' | 'REMOTE_ONLY' | 'ORPHANED'
+
 interface BaseEntity {
   id: string
   version?: number
@@ -80,6 +82,10 @@ export interface TrainingSessionSummary {
   lastLoss?: number
   assignedResourceId?: string
   assignedResourceName?: string
+  /** The reporter this model was trained for (null = general model over all reporters). */
+  reporterId?: string
+  /** Snapshot of that reporter's display name at train time (null for a general model). */
+  reporterName?: string
   checkpointUri?: string
   resumable: boolean
   rerunnable: boolean
@@ -87,6 +93,8 @@ export interface TrainingSessionSummary {
   outputModelRef?: string
   /** Whether this model's files are reachable for LOCAL CPU inference on the mgmt host. */
   modelAvailableLocal: boolean
+  /** Where the model can be loaded from (undefined until COMPLETED); ORPHANED = lost with its box. */
+  modelReachability?: ModelReachability
   /** Progress of fetching a remote model's files to the mgmt host. */
   modelFetchStatus: ModelFetchStatus
   parentSessionId?: string

@@ -17,7 +17,9 @@ const saving = ref(false)
 const error = ref('')
 
 function emptyDraft(): InferenceRunDto {
-  return { sourceSessionId: '', target: '', prompt: '', temperature: 50, maxLength: 512, numReturnSequences: 3 }
+  // Absurdity is the primary control and drives temperature + maxLength server-side,
+  // so leave those undefined (blank in Advanced) unless the admin overrides them.
+  return { sourceSessionId: '', target: '', prompt: '', absurdity: 50, numReturnSequences: 3 }
 }
 
 onMounted(() => {
@@ -135,14 +137,19 @@ function targetLabel(run: InferenceRunSummary) {
       </div>
       <p v-if="current.errorMessage" class="mt-3 text-sm text-red-600">{{ current.errorMessage }}</p>
       <div v-if="current.outputs?.length" class="mt-3 flex flex-col gap-2">
-        <div
+        <article
           v-for="(out, i) in current.outputs"
           :key="i"
           dir="auto"
-          class="whitespace-pre-wrap rounded-lg bg-gray-50 p-3 text-sm text-gray-800"
+          class="rounded-lg bg-gray-50 p-3 text-sm text-gray-800"
         >
-          <span class="mr-2 text-xs font-semibold text-gray-400">#{{ i + 1 }}</span>{{ out }}
-        </div>
+          <div class="flex items-baseline gap-2">
+            <span class="text-xs font-semibold text-gray-400">#{{ i + 1 }}</span>
+            <h3 v-if="out.title" class="font-bold text-gray-900">{{ out.title }}</h3>
+          </div>
+          <p v-if="out.subTitle" class="mt-0.5 font-medium text-gray-600">{{ out.subTitle }}</p>
+          <p class="mt-1 whitespace-pre-wrap text-gray-800">{{ out.paragraph }}</p>
+        </article>
       </div>
       <p v-if="current.durationMs != null" class="mt-2 text-xs text-gray-400">took {{ (current.durationMs / 1000).toFixed(1) }}s</p>
     </div>

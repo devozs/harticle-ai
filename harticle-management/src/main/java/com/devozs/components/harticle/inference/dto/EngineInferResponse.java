@@ -13,7 +13,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class EngineInferResponse {
-    private List<String> outputs;
+    private List<ArticleSample> outputs;
     private String device;     // "cpu" | "cuda" | ...
     private String model;
     private String error;      // non-null on failure

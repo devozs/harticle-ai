@@ -41,6 +41,29 @@ def _is_stub() -> bool:
     return os.getenv("HARTICLE_ENGINE_STUB", "").strip() == "1"
 
 
+def split_article(text: str) -> dict:
+    """Parse a generated sample into ``{title, subTitle, paragraph}``.
+
+    Inverts the training framing (``title. subTitle. content``): split on ``.``,
+    the first segment is the title, the second the sub-title, and the rest joined
+    back is the paragraph. When there isn't enough structure (a short/odd sample,
+    or the ``(no decodable text …)`` note) we keep the whole thing as the paragraph
+    so the caller always gets a renderable shape and never crashes on a bad split.
+    """
+    text = (text or "").strip()
+    segments = [s.strip() for s in text.split(".")]
+    # Drop trailing empties from a sentence-final '.' so they don't eat a slot.
+    while segments and not segments[-1]:
+        segments.pop()
+    if len(segments) >= 3:
+        return {
+            "title": segments[0],
+            "subTitle": segments[1],
+            "paragraph": ". ".join(segments[2:]).strip(),
+        }
+    return {"title": "", "subTitle": "", "paragraph": text}
+
+
 def _looks_like_hub_id(model_ref: str) -> bool:
     """An HF repo id has no URI scheme and no filesystem path separators of a local dir."""
     return "://" not in model_ref and not model_ref.startswith("/")
@@ -155,7 +178,11 @@ def load_model(model_ref: str, storage_kind: str = None, model_key_prefix: str =
 
 
 def generate(loaded, prompt: str, params: dict) -> list:
-    """Generate samples for prompt. params: {temperature, maxLength, numReturnSequences}."""
+    """Generate samples for prompt. params: {temperature, maxLength, numReturnSequences}.
+
+    Returns a list of structured ``{title, subTitle, paragraph}`` dicts (the raw
+    continuation parsed via :func:`split_article`).
+    """
     temperature = (params.get("temperature") or 50) / 100
     if temperature < 0.1:
         temperature = 0.5
@@ -163,7 +190,8 @@ def generate(loaded, prompt: str, params: dict) -> list:
     num_return = params.get("numReturnSequences") or 3
 
     if _is_stub() or loaded is None:
-        return [f"[stub] generated sample {i + 1} for: {prompt}" for i in range(num_return)]
+        return [split_article(f"[stub] title {i + 1}. sub-title for {prompt}. "
+                              f"generated paragraph body {i + 1}.") for i in range(num_return)]
 
     import torch
 
@@ -213,7 +241,7 @@ def generate(loaded, prompt: str, params: dict) -> list:
             text = (f"(no decodable text — the model generated {gen_count} token(s) that "
                     f"decoded to nothing; the base model is likely undertrained or its "
                     f"tokenizer can't represent this prompt's language)")
-        samples.append(text)
+        samples.append(split_article(text))
     return samples
 
 

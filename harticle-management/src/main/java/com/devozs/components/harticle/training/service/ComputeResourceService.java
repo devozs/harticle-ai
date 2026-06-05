@@ -199,14 +199,25 @@ public class ComputeResourceService {
 
     /** Sweep resources whose heartbeat has gone stale to OFFLINE. */
     public void markStaleOffline() {
-        long cutoffMs = System.currentTimeMillis() - properties.getHeartbeatTimeoutSeconds() * 1000;
         for (ComputeResource r : getAll()) {
-            if (r.getStatus() != ComputeResourceStatus.OFFLINE
-                    && (r.getLastHeartbeat() == null || r.getLastHeartbeat().getTime() < cutoffMs)) {
+            if (r.getStatus() != ComputeResourceStatus.OFFLINE && !isLive(r)) {
                 r.setStatus(ComputeResourceStatus.OFFLINE);
                 repository.save(r);
             }
         }
+    }
+
+    /**
+     * Is this box alive right now — not OFFLINE and heartbeating within the timeout?
+     * The single source of truth for the stale cutoff, shared by {@link #markStaleOffline}
+     * and model-reachability checks so they can't drift apart.
+     */
+    public boolean isLive(ComputeResource resource) {
+        if (resource == null || resource.getStatus() == ComputeResourceStatus.OFFLINE) {
+            return false;
+        }
+        long cutoffMs = System.currentTimeMillis() - properties.getHeartbeatTimeoutSeconds() * 1000;
+        return resource.getLastHeartbeat() != null && resource.getLastHeartbeat().getTime() >= cutoffMs;
     }
 
     public ComputeResource save(ComputeResource resource) {
