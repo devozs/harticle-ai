@@ -127,9 +127,12 @@ public class InferenceService {
         InferenceRun run = runRepository.save(builder.build());
 
         if (local) {
+            log.info("inference run {} created (LOCAL) — dispatching to engine {}", run.getId(), engineUrl);
             self.runLocalAsync(run.getId());
+        } else {
+            log.info("inference run {} created (GPU/HPU, type={}) — awaiting agent claim",
+                    run.getId(), run.getRequiredType());
         }
-        // GPU/HPU runs sit PENDING; a matching agent claims them via the pull protocol.
         return run;
     }
 
@@ -140,6 +143,7 @@ public class InferenceService {
      */
     @Async
     public void runLocalAsync(UUID runId) {
+        log.info("local inference {} starting on engine {}", runId, engineUrl);
         InferenceRun run = get(runId);
         long start = System.currentTimeMillis();
         run.setStatus(InferenceStatus.RUNNING);
@@ -164,6 +168,10 @@ public class InferenceService {
             if (resp.getError() != null) {
                 throw new IllegalStateException(resp.getError());
             }
+            log.info("local inference {} done on {} ({} sample(s), {}ms)",
+                    runId, resp.getDevice(),
+                    resp.getOutputs() == null ? 0 : resp.getOutputs().size(),
+                    System.currentTimeMillis() - start);
             finish(run, resp.getOutputs(), null, null);
         } catch (Exception e) {
             log.error("local inference failed for run {}", runId, e);
