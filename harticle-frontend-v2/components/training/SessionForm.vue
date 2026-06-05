@@ -181,6 +181,10 @@ onBeforeUnmount(() => { if (hfTimer) clearTimeout(hfTimer) })
         <input v-model="model.pushToHub" type="checkbox" class="h-4 w-4 rounded border-gray-300">
         <span class="text-gray-700">Push to HF Hub</span>
       </label>
+      <label class="flex items-center gap-2 text-sm" title="On success, copy the model to this host so it can be tested on Local (CPU) without a manual fetch">
+        <input v-model="model.autoFetchLocal" type="checkbox" class="h-4 w-4 rounded border-gray-300">
+        <span class="text-gray-700">Fetch to local when done</span>
+      </label>
     </div>
 
     <label class="flex flex-col gap-1 text-sm">

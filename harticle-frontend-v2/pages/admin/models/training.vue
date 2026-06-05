@@ -54,6 +54,7 @@ function emptyDraft(): TrainingSessionDto {
     requiredType: 'CUDA',
     stubMode: false,
     pushToHub: false,
+    autoFetchLocal: true,
     epochs: 3,
     batchSize: 4,
     learningRate: 0.00005,
@@ -137,10 +138,22 @@ function fetchLabel(s: TrainingSessionSummary): string | undefined {
   if (s.status !== 'COMPLETED' || !s.outputModelRef || s.modelAvailableLocal) return undefined
   // The files are gone with the training box — nothing to fetch (the server errors too).
   if (s.modelReachability === 'ORPHANED') return undefined
+  // Box still registered but offline: a fetch can't start until it heartbeats again.
+  // Show a wait note (handled in the template) instead of a button that would just hang.
+  if (s.modelReachability === 'REMOTE_OFFLINE') return undefined
   if (s.modelFetchStatus === 'REQUESTED') return 'Fetch queued…'
   if (s.modelFetchStatus === 'UPLOADING') return 'Fetching…'
   if (s.modelFetchStatus === 'FAILED') return 'Fetch failed — retry'
   return 'Fetch to local'
+}
+
+// Compact fetch-to-local progress for the list row, e.g. "Fetching 3/8 · 40/210 MB".
+function fetchProgressText(s: TrainingSessionSummary): string | undefined {
+  if (s.modelFetchStatus !== 'UPLOADING') return undefined
+  const mb = (b?: number) => b == null ? '?' : `${(b / 1_048_576).toFixed(0)}`
+  const files = s.modelFetchFilesTotal ? `${s.modelFetchFilesDone ?? 0}/${s.modelFetchFilesTotal}` : ''
+  const bytes = s.modelFetchBytesTotal ? ` · ${mb(s.modelFetchBytesDone)}/${mb(s.modelFetchBytesTotal)} MB` : ''
+  return files ? `Fetching ${files}${bytes}` : 'Fetching…'
 }
 
 function statusBadge(status: string) {
@@ -217,8 +230,14 @@ function statusBadge(status: string) {
                 title="Start a fresh attempt with the same config and dataset"
                 @click="rerun(s)"
               >{{ rerunning === s.id ? 'Re-running…' : 'Re-run' }}</button>
+              <!-- While uploading, show live file/byte progress instead of a button. -->
+              <span
+                v-if="fetchProgressText(s)"
+                class="ml-3 text-xs font-medium text-cyan-700"
+                title="Copying the model's files to this host"
+              >{{ fetchProgressText(s) }}</span>
               <button
-                v-if="fetchLabel(s)"
+                v-else-if="fetchLabel(s)"
                 type="button"
                 class="ml-3 text-sm font-medium text-cyan-700 hover:underline disabled:opacity-40"
                 :disabled="fetching === s.id || s.modelFetchStatus === 'REQUESTED' || s.modelFetchStatus === 'UPLOADING'"
@@ -230,6 +249,11 @@ function statusBadge(status: string) {
                 class="ml-3 text-xs font-medium text-red-700"
                 title="The training box was removed; this model's files are lost and it can no longer be run or fetched. Re-train it."
               >Model lost — training box removed</span>
+              <span
+                v-else-if="s.status === 'COMPLETED' && s.modelReachability === 'REMOTE_OFFLINE'"
+                class="ml-3 text-xs font-medium text-amber-700"
+                title="The training box that holds this model is offline (heartbeat failing). Bring it back online and the model can be fetched to local — the files are not lost."
+              >Training box offline — bring it online to fetch</span>
               <span
                 v-else-if="s.status === 'COMPLETED' && s.modelAvailableLocal"
                 class="ml-3 text-xs text-green-700"

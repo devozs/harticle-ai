@@ -42,6 +42,9 @@ public final class TrainingAgentURLS {
     public static final String MODEL_UPLOAD_COMPLETE = "/model-upload-complete";
     /** Header carrying each model file's path relative to the model dir root. */
     public static final String REL_PATH_HEADER = "X-Rel-Path";
+    /** Pre-walk totals (sent on every model file) so the UI can show a fetch fraction. */
+    public static final String FILES_TOTAL_HEADER = "X-Files-Total";
+    public static final String BYTES_TOTAL_HEADER = "X-Bytes-Total";
 
     public static final String ID = "/{id}";
 

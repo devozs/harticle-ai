@@ -6,6 +6,7 @@ defineEmits<{
   (e: 'enroll', resource: ComputeResource): void
   (e: 'remove', resource: ComputeResource): void
   (e: 'reverify', resource: ComputeResource): void
+  (e: 'rename', resource: ComputeResource): void
 }>()
 
 // Treat a heartbeat older than ~60s as offline, regardless of stored status.
@@ -64,7 +65,7 @@ const deviceName = computed<string | undefined>(() => {
       <div>
         <div class="flex items-center gap-2">
           <span class="inline-block h-2.5 w-2.5 rounded-full" :class="online ? statusColor : 'bg-gray-300'" />
-          <span class="font-semibold text-gray-900">{{ resource.name }}</span>
+          <span class="font-semibold" :class="resource.name ? 'text-gray-900' : 'italic text-gray-400'">{{ resource.name || 'Unnamed' }}</span>
           <span class="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{{ resource.type }}</span>
           <span
             v-if="cardCount !== undefined"
@@ -88,6 +89,14 @@ const deviceName = computed<string | undefined>(() => {
           @click="$emit('enroll', resource)"
         >
           {{ resource.enrolled ? 'Re-issue code' : 'Enrollment code' }}
+        </button>
+        <button
+          type="button"
+          class="rounded-lg border border-gray-300 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-100"
+          title="Rename this resource"
+          @click="$emit('rename', resource)"
+        >
+          Rename
         </button>
         <button
           type="button"

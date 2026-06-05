@@ -47,12 +47,13 @@ const selectedReporterId = ref<string>(GENERAL)
 // LOCAL can only load models whose files are on the management host. When the
 // target is Local, hide models that aren't available locally (they must be
 // fetched first from the training screen, or run on their GPU/HPU box). For a
-// GPU target, hide ORPHANED models — their files were lost when their training
-// box was removed, so they can't run anywhere (the server also rejects them).
+// GPU target, hide models that can't run there: ORPHANED (files lost with a removed
+// box) and REMOTE_OFFLINE (files on a box whose heartbeat lapsed — can't run until
+// it's back). The server rejects both too; filtering keeps the picker to runnables.
 const localFilteredModels = computed(() =>
   isLocalTarget.value
     ? props.models.filter(m => m.availableLocal)
-    : props.models.filter(m => m.reachability !== 'ORPHANED'))
+    : props.models.filter(m => m.reachability !== 'ORPHANED' && m.reachability !== 'REMOTE_OFFLINE'))
 
 // Distinct reporters present across the available (target-filtered) models.
 const reporterOptions = computed(() => {

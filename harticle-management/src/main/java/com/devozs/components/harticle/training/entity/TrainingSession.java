@@ -162,4 +162,27 @@ public class TrainingSession extends BaseEntity {
     @Column(name = "model_fetch_status", nullable = false, length = 16)
     @lombok.Builder.Default
     private ModelFetchStatus modelFetchStatus = ModelFetchStatus.NONE;
+
+    /** Live fetch-to-local progress: file/byte counts (totals seeded from the agent's
+     * pre-walk on the first file, *_done advancing as files land) and the source
+     * {@code file://} dir on the training box. Target is always {@code models/{id}/}. */
+    @Column(name = "model_fetch_files_total")
+    private Integer modelFetchFilesTotal;
+    @Column(name = "model_fetch_files_done")
+    private Integer modelFetchFilesDone;
+    @Column(name = "model_fetch_bytes_total")
+    private Long modelFetchBytesTotal;
+    @Column(name = "model_fetch_bytes_done")
+    private Long modelFetchBytesDone;
+    @Column(name = "model_fetch_source", length = 1024)
+    private String modelFetchSource;
+
+    /**
+     * When true, fetch the trained model to the management host automatically on
+     * successful completion (so it's immediately testable on LOCAL CPU). A no-op
+     * for an already-reachable model (s3/hub ref, or a local-fs run). Default ON.
+     */
+    @Column(name = "auto_fetch_local", nullable = false)
+    @lombok.Builder.Default
+    private boolean autoFetchLocal = true;
 }

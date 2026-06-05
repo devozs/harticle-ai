@@ -211,8 +211,20 @@ public class TrainingAgentService {
         }
         session.setLastAgentSeenAt(new Date());
         sessionRepository.save(session);
-        freeResource(session);
         sessionService.appendLog(session.getId(), "INFO", "completed; model=" + request.getOutputModelRef());
+        // Auto-fetch the model to local (if opted in) BEFORE freeing the resource:
+        // requestModelFetch flags the box that trained it to push its files up, and
+        // that needs the assignment intact. Best-effort — a fetch hiccup must not
+        // flip a successful run to failed (the admin can still fetch manually).
+        if (session.isAutoFetchLocal()) {
+            try {
+                sessionService.requestModelFetch(session.getId());
+            } catch (Exception e) {
+                sessionService.appendLog(session.getId(), "WARN",
+                        "auto fetch-to-local skipped: " + e.getMessage());
+            }
+        }
+        freeResource(session);
     }
 
     @Transactional

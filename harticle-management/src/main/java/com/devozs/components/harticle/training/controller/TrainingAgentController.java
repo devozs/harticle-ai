@@ -258,11 +258,14 @@ public class TrainingAgentController {
     @PostMapping(TrainingAgentURLS.SESSIONS + TrainingAgentURLS.ID + TrainingAgentURLS.MODEL_FILE)
     public ResponseEntity<Void> modelFile(@RequestHeader(TrainingAgentURLS.TOKEN_HEADER) String agentToken,
                                           @RequestHeader(TrainingAgentURLS.REL_PATH_HEADER) String relPath,
+                                          @RequestHeader(value = TrainingAgentURLS.FILES_TOTAL_HEADER, required = false) Integer filesTotal,
+                                          @RequestHeader(value = TrainingAgentURLS.BYTES_TOTAL_HEADER, required = false) Long bytesTotal,
                                           @PathVariable UUID id,
                                           HttpServletRequest request) throws java.io.IOException {
         ComputeResource resource = resolve(agentToken);
         requireOwned(resource, id);
-        sessionService.receiveModelFile(id, relPath, request.getInputStream(), request.getContentLengthLong());
+        sessionService.receiveModelFile(id, relPath, request.getInputStream(), request.getContentLengthLong(),
+                filesTotal, bytesTotal);
         return ResponseEntity.noContent().build();
     }
 

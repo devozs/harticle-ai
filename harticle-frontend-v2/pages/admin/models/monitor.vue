@@ -28,6 +28,33 @@ onBeforeUnmount(() => store.stopMonitorPolling())
 const canStop = computed(() =>
   monitor.value && ['RUNNING', 'ASSIGNED', 'RESUMING'].includes(monitor.value.status))
 
+// Fetch-to-local progress: shown while a model push is in flight or has failed.
+const fetchInFlight = computed(() =>
+  monitor.value && ['REQUESTED', 'UPLOADING', 'FAILED'].includes(monitor.value.modelFetchStatus))
+
+function mb(bytes?: number): string {
+  if (bytes == null) return '—'
+  return `${(bytes / 1_048_576).toFixed(1)} MB`
+}
+
+// Fraction by bytes when totals are known, else by files; 0 until totals arrive.
+const fetchPercent = computed(() => {
+  const m = monitor.value
+  if (!m) return 0
+  if (m.modelFetchBytesTotal) return Math.min(100, Math.round((m.modelFetchBytesDone ?? 0) / m.modelFetchBytesTotal * 100))
+  if (m.modelFetchFilesTotal) return Math.min(100, Math.round((m.modelFetchFilesDone ?? 0) / m.modelFetchFilesTotal * 100))
+  return 0
+})
+
+function fetchStatusText(status?: string): string {
+  switch (status) {
+    case 'REQUESTED': return 'Queued — waiting for the training box to push'
+    case 'UPLOADING': return 'Copying model files to this host'
+    case 'FAILED': return 'Fetch failed'
+    default: return ''
+  }
+}
+
 // All attempts in this session's re-run chain (original + every re-run), oldest
 // attempt first. Derived from the sessions list: the chain "root" is the
 // parentSessionId if this is a re-run, else this session's own id.
@@ -182,6 +209,27 @@ async function rerun() {
         <div class="mt-1 break-all text-gray-900">{{ monitor.outputModelRef ?? '—' }}</div>
         <p v-if="monitor.errorMessage" class="mt-2 text-red-600">{{ monitor.errorMessage }}</p>
       </div>
+    </div>
+
+    <!-- fetch-to-local progress: live file/byte counts + source → target -->
+    <div v-if="monitor && fetchInFlight" class="mt-4 rounded-2xl border p-4 text-sm"
+         :class="monitor.modelFetchStatus === 'FAILED' ? 'border-red-200 bg-red-50' : 'border-cyan-200 bg-cyan-50'">
+      <div class="flex items-center justify-between">
+        <span class="font-semibold" :class="monitor.modelFetchStatus === 'FAILED' ? 'text-red-700' : 'text-cyan-800'">
+          Fetch to local — {{ fetchStatusText(monitor.modelFetchStatus) }}
+        </span>
+        <span v-if="monitor.modelFetchFilesTotal" class="text-xs text-gray-500">
+          {{ monitor.modelFetchFilesDone ?? 0 }}/{{ monitor.modelFetchFilesTotal }} files ·
+          {{ mb(monitor.modelFetchBytesDone) }}/{{ mb(monitor.modelFetchBytesTotal) }}
+        </span>
+      </div>
+      <div v-if="monitor.modelFetchStatus !== 'FAILED'" class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-cyan-100">
+        <div class="h-full bg-cyan-600 transition-all" :style="{ width: `${fetchPercent}%` }" />
+      </div>
+      <p class="mt-2 break-all text-xs text-gray-500">
+        <span class="text-gray-400">from</span> {{ monitor.modelFetchSource ?? '—' }}
+        <span class="text-gray-400">→</span> models/{{ monitor.id }}
+      </p>
     </div>
 
     <!-- progress bar -->

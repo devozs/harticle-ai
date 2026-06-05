@@ -123,6 +123,14 @@ public class InferenceService {
         }
 
         boolean local = TARGET_LOCAL.equalsIgnoreCase(dto.getTarget());
+        // The model's only copy is a file:// dir on its training box, which is offline
+        // (heartbeat lapsed). It can't run on that box right now and can't be fetched
+        // until it's back. Reject a GPU/HPU target with a clear, recoverable message.
+        // (LOCAL still falls through to the isModelAvailableLocally check below.)
+        if (!local && reachability == ModelReachability.REMOTE_OFFLINE) {
+            throw new IllegalStateException(
+                    "this model's training box is offline — bring it back online to run or fetch the model (the files are not lost)");
+        }
         // LOCAL can only load a model whose files are on THIS host. A file:// model
         // trained on a remote box isn't reachable until it's been fetched to local;
         // reject up front with a clear message instead of failing mid-generation.

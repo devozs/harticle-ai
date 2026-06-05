@@ -56,6 +56,12 @@ public class TrainingSessionSummary {
     private ModelReachability modelReachability;
     /** Progress of bringing a remote model's files to the mgmt host (fetch-to-local). */
     private ModelFetchStatus modelFetchStatus;
+    /** Live fetch-to-local counters + source dir (null when no fetch has run). Target is models/{id}/. */
+    private Integer modelFetchFilesTotal;
+    private Integer modelFetchFilesDone;
+    private Long modelFetchBytesTotal;
+    private Long modelFetchBytesDone;
+    private String modelFetchSource;
 
     /** The original run this is an attempt of (null for an original run). */
     private UUID parentSessionId;

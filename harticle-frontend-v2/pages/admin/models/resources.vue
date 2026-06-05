@@ -13,6 +13,9 @@ const drawerOpen = ref(false)
 const draft = ref<ComputeResourceDto>({ name: '', type: 'CUDA', enabled: true })
 const saving = ref(false)
 const error = ref('')
+// When set, the drawer renames an existing resource (type is fixed); else it creates one.
+const editingId = ref<string | undefined>()
+const nameValid = computed(() => !!draft.value.name && draft.value.name.trim().length > 0)
 
 // One-time enrollment code shown after issue, with the right install+run snippet.
 const codeModal = ref<{ name: string, code: string, type: ComputeResourceType } | undefined>()
@@ -98,16 +101,29 @@ onMounted(() => {
 onBeforeUnmount(() => { if (poll) clearInterval(poll) })
 
 function openCreate() {
+  editingId.value = undefined
   draft.value = { name: '', type: 'CUDA', enabled: true }
   error.value = ''
   drawerOpen.value = true
 }
 
+function openRename(resource: ComputeResource) {
+  editingId.value = resource.id
+  // Only the name is editable on rename; carry type/enabled through unchanged.
+  draft.value = { name: resource.name, type: resource.type, enabled: resource.enabled }
+  error.value = ''
+  drawerOpen.value = true
+}
+
 async function save() {
+  if (!nameValid.value) {
+    error.value = 'Name is required.'
+    return
+  }
   error.value = ''
   saving.value = true
   try {
-    await store.saveResource(draft.value)
+    await store.saveResource({ ...draft.value, name: draft.value.name!.trim() }, editingId.value)
     drawerOpen.value = false
   } catch (e) {
     error.value = String(e)
@@ -175,6 +191,7 @@ function copy(text: string) {
         :resource="r"
         @enroll="enroll"
         @reverify="reverify"
+        @rename="openRename"
         @remove="remove"
       />
       <p v-if="!resources.length" class="text-sm text-gray-400">No compute resources yet.</p>
@@ -185,16 +202,24 @@ function copy(text: string) {
       <div class="absolute inset-0 bg-black/30" />
       <aside class="relative z-50 h-full w-full max-w-lg overflow-auto bg-white p-6 shadow-xl">
         <div class="flex items-start justify-between">
-          <h2 class="text-lg font-bold text-gray-900">New compute resource</h2>
+          <h2 class="text-lg font-bold text-gray-900">{{ editingId ? 'Rename compute resource' : 'New compute resource' }}</h2>
           <button type="button" class="text-gray-400 hover:text-gray-700" @click="drawerOpen = false">✕</button>
         </div>
 
         <div class="mt-4 flex flex-col gap-4">
           <label class="flex flex-col gap-1 text-sm">
-            <span class="font-medium text-gray-700">Name</span>
-            <input v-model="draft.name" type="text" class="rounded-lg border border-gray-300 px-3 py-2" placeholder="my-laptop-gpu">
+            <span class="font-medium text-gray-700">Name <span class="text-red-500">*</span></span>
+            <input
+              v-model="draft.name"
+              type="text"
+              class="rounded-lg border px-3 py-2"
+              :class="!nameValid && draft.name !== '' ? 'border-red-400' : 'border-gray-300'"
+              placeholder="my-laptop-gpu"
+              @keyup.enter="save"
+            >
+            <span v-if="!nameValid" class="text-xs text-gray-400">A name is required.</span>
           </label>
-          <label class="flex flex-col gap-1 text-sm">
+          <label v-if="!editingId" class="flex flex-col gap-1 text-sm">
             <span class="font-medium text-gray-700">Type</span>
             <select v-model="draft.type" class="rounded-lg border border-gray-300 px-3 py-2">
               <option value="CUDA">CUDA (GPU)</option>
@@ -209,10 +234,11 @@ function copy(text: string) {
           <button
             type="button"
             class="rounded-lg bg-cyan-700 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-800 disabled:opacity-40"
-            :disabled="saving"
+            :disabled="saving || !nameValid"
+            :title="nameValid ? '' : 'Enter a name first'"
             @click="save"
           >
-            {{ saving ? 'Saving…' : 'Create' }}
+            {{ saving ? 'Saving…' : editingId ? 'Save' : 'Create' }}
           </button>
           <button
             type="button"

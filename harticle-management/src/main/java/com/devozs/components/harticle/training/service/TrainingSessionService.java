@@ -97,6 +97,8 @@ public class TrainingSessionService {
                 .requiredType(dto.getRequiredType())
                 .stubMode(Boolean.TRUE.equals(dto.getStubMode()))
                 .pushToHub(Boolean.TRUE.equals(dto.getPushToHub()))
+                // Default ON when unspecified — the common intent is "train then test locally".
+                .autoFetchLocal(dto.getAutoFetchLocal() == null || dto.getAutoFetchLocal())
                 .status(TrainingStatus.PENDING)
                 .progressPercent(0)
                 .datasetSpec(buildDatasetSpec(dto))
@@ -194,6 +196,7 @@ public class TrainingSessionService {
                 .requiredType(parent.getRequiredType())
                 .stubMode(parent.isStubMode())
                 .pushToHub(parent.isPushToHub())
+                .autoFetchLocal(parent.isAutoFetchLocal())
                 .status(TrainingStatus.PENDING)
                 .progressPercent(0)
                 .datasetSpec(parent.getDatasetSpec())
@@ -358,16 +361,20 @@ public class TrainingSessionService {
         if (isModelAvailableLocally(s)) {
             return ModelReachability.LOCAL_AVAILABLE;
         }
-        // file:// not on this host: only its own training box still holds the files, and
-        // only if that box is still registered and alive.
+        // file:// not on this host: the files live only on the box that trained it.
+        // Distinguish three cases so the UI is accurate:
+        //  - box record gone (deleted / never recorded) → ORPHANED (files truly lost)
+        //  - box registered but not live (heartbeat lapsed) → REMOTE_OFFLINE (recoverable)
+        //  - box registered and live → REMOTE_ONLY (fetchable / runnable on that box)
         UUID resourceId = s.getAssignedResourceId();
-        if (resourceId != null) {
-            ComputeResource box = resourceRepository.findById(resourceId).orElse(null);
-            if (resourceService.isLive(box)) {
-                return ModelReachability.REMOTE_ONLY;
-            }
+        if (resourceId == null) {
+            return ModelReachability.ORPHANED;
         }
-        return ModelReachability.ORPHANED;
+        ComputeResource box = resourceRepository.findById(resourceId).orElse(null);
+        if (box == null) {
+            return ModelReachability.ORPHANED;
+        }
+        return resourceService.isLive(box) ? ModelReachability.REMOTE_ONLY : ModelReachability.REMOTE_OFFLINE;
     }
 
     /**
@@ -395,12 +402,25 @@ public class TrainingSessionService {
         resourceRepository.save(resource);
 
         session.setModelFetchStatus(ModelFetchStatus.REQUESTED);
+        // Reset any stale progress from a prior attempt; the source is the file:// dir
+        // on the training box. Totals get seeded by the agent's first uploaded file.
+        session.setModelFetchSource(session.getOutputModelRef());
+        session.setModelFetchFilesTotal(null);
+        session.setModelFetchFilesDone(0);
+        session.setModelFetchBytesTotal(null);
+        session.setModelFetchBytesDone(0L);
         appendLog(sessionId, "INFO", "model fetch-to-local requested; awaiting agent push from " + resource.getName());
         return sessionRepository.save(session);
     }
 
-    /** Write one pushed model file under {@code models/{sessionId}/{relPath}}. */
-    public void receiveModelFile(UUID sessionId, String relPath, InputStream data, long contentLength) {
+    /**
+     * Write one pushed model file under {@code models/{sessionId}/{relPath}} and
+     * advance live progress. {@code filesTotal}/{@code bytesTotal} are the agent's
+     * pre-walk of the whole dir (sent on every file; we record them once); the
+     * done-counters increment per file so the monitor can show a live fraction.
+     */
+    public void receiveModelFile(UUID sessionId, String relPath, InputStream data, long contentLength,
+                                 Integer filesTotal, Long bytesTotal) {
         String safeRel = relPath.replace("\\", "/").replaceAll("^/+", "");
         if (safeRel.contains("..")) {
             throw new IllegalArgumentException("illegal model file path: " + relPath);
@@ -408,9 +428,20 @@ public class TrainingSessionService {
         TrainingSession session = get(sessionId);
         if (session.getModelFetchStatus() != ModelFetchStatus.UPLOADING) {
             session.setModelFetchStatus(ModelFetchStatus.UPLOADING);
-            sessionRepository.save(session);
         }
+        if (filesTotal != null && session.getModelFetchFilesTotal() == null) {
+            session.setModelFetchFilesTotal(filesTotal);
+        }
+        if (bytesTotal != null && session.getModelFetchBytesTotal() == null) {
+            session.setModelFetchBytesTotal(bytesTotal);
+        }
+        // Write the bytes, then count them — write() consumes the stream, so measure
+        // via the declared content length (the agent sends the real per-file size).
         storageService.write(modelKeyPrefix(sessionId) + "/" + safeRel, data, contentLength);
+        session.setModelFetchFilesDone((session.getModelFetchFilesDone() == null ? 0 : session.getModelFetchFilesDone()) + 1);
+        session.setModelFetchBytesDone((session.getModelFetchBytesDone() == null ? 0L : session.getModelFetchBytesDone())
+                + Math.max(contentLength, 0));
+        sessionRepository.save(session);
     }
 
     /** The agent finished (or failed) pushing the model; finalize + clear the flag. */
@@ -478,6 +509,11 @@ public class TrainingSessionService {
                 .modelAvailableLocal(s.getStatus() == TrainingStatus.COMPLETED && isModelAvailableLocally(s))
                 .modelReachability(s.getStatus() == TrainingStatus.COMPLETED ? modelReachability(s) : null)
                 .modelFetchStatus(s.getModelFetchStatus())
+                .modelFetchFilesTotal(s.getModelFetchFilesTotal())
+                .modelFetchFilesDone(s.getModelFetchFilesDone())
+                .modelFetchBytesTotal(s.getModelFetchBytesTotal())
+                .modelFetchBytesDone(s.getModelFetchBytesDone())
+                .modelFetchSource(s.getModelFetchSource())
                 .errorMessage(s.getErrorMessage())
                 .errorType(s.getErrorType())
                 .createdAtEpochMs(s.getCreatedAt() == null ? null : s.getCreatedAt().getTime())

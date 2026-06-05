@@ -22,6 +22,8 @@ public class TrainingSessionDto {
     private ComputeResourceType requiredType;
     private Boolean stubMode;
     private Boolean pushToHub;
+    /** Fetch the trained model to local on successful completion (default true). */
+    private Boolean autoFetchLocal;
 
     // dataset scope (null/empty reporterIds = all scraped articles)
     private List<String> reporterIds;

@@ -15,7 +15,7 @@ export type TrainingStatus =
 
 export type ModelFetchStatus = 'NONE' | 'REQUESTED' | 'UPLOADING' | 'AVAILABLE' | 'FAILED'
 
-export type ModelReachability = 'PORTABLE' | 'LOCAL_AVAILABLE' | 'REMOTE_ONLY' | 'ORPHANED'
+export type ModelReachability = 'PORTABLE' | 'LOCAL_AVAILABLE' | 'REMOTE_ONLY' | 'REMOTE_OFFLINE' | 'ORPHANED'
 
 interface BaseEntity {
   id: string
@@ -56,6 +56,8 @@ export interface TrainingSessionDto {
   requiredType?: ComputeResourceType
   stubMode?: boolean
   pushToHub?: boolean
+  /** Fetch the trained model to local on successful completion (default true). */
+  autoFetchLocal?: boolean
   reporterIds?: string[]
   epochs?: number
   batchSize?: number
@@ -97,6 +99,12 @@ export interface TrainingSessionSummary {
   modelReachability?: ModelReachability
   /** Progress of fetching a remote model's files to the mgmt host. */
   modelFetchStatus: ModelFetchStatus
+  /** Live fetch-to-local counters + source dir (undefined when no fetch has run). Target is models/{id}/. */
+  modelFetchFilesTotal?: number
+  modelFetchFilesDone?: number
+  modelFetchBytesTotal?: number
+  modelFetchBytesDone?: number
+  modelFetchSource?: string
   parentSessionId?: string
   attemptNumber: number
   errorMessage?: string

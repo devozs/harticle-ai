@@ -13,14 +13,19 @@ package com.devozs.components.harticle.training.domain;
  *   <li>{@code REMOTE_ONLY} — a {@code file://} model not yet on this host, but the box
  *       that trained it is still registered and live; fetchable, and GPU-runnable on
  *       that same box.</li>
+ *   <li>{@code REMOTE_OFFLINE} — a {@code file://} model not on this host whose training
+ *       box is still registered but not live (heartbeat lapsed). The files are NOT lost:
+ *       once the box is back online it flips to {@code REMOTE_ONLY} and can be fetched /
+ *       run. Distinct from ORPHANED so the UI doesn't wrongly say "box removed".</li>
  *   <li>{@code ORPHANED} — a {@code file://} model not on this host whose training box
- *       is gone (deleted / never recorded / offline). The files are lost with the box;
- *       the model cannot be run or fetched and should be re-trained.</li>
+ *       record is gone (admin deleted it / never recorded). The files are lost with the
+ *       box; the model cannot be run or fetched and should be re-trained.</li>
  * </ul>
  */
 public enum ModelReachability {
     PORTABLE,
     LOCAL_AVAILABLE,
     REMOTE_ONLY,
+    REMOTE_OFFLINE,
     ORPHANED,
 }

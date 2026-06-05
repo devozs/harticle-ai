@@ -57,7 +57,7 @@ public class ComputeResourceService {
 
     public ComputeResource create(ComputeResourceDto dto) {
         ComputeResource resource = ComputeResource.builder()
-                .name(dto.getName())
+                .name(requireName(dto.getName()))
                 .type(dto.getType())
                 .status(ComputeResourceStatus.OFFLINE)
                 .enrolled(false)
@@ -68,10 +68,21 @@ public class ComputeResourceService {
 
     public ComputeResource update(UUID id, ComputeResourceDto dto) {
         ComputeResource resource = get(id);
-        if (dto.getName() != null) resource.setName(dto.getName());
+        // A name may be omitted (e.g. an enabled-only toggle), but if present it must
+        // not be blanked — every resource needs a human-readable label.
+        if (dto.getName() != null) resource.setName(requireName(dto.getName()));
         if (dto.getType() != null) resource.setType(dto.getType());
         if (dto.getEnabled() != null) resource.setEnabled(dto.getEnabled());
         return repository.save(resource);
+    }
+
+    /** Trim and require a non-blank resource name. */
+    private static String requireName(String name) {
+        String trimmed = name == null ? "" : name.trim();
+        if (trimmed.isEmpty()) {
+            throw new IllegalArgumentException("name is required");
+        }
+        return trimmed;
     }
 
     public void delete(UUID id) {
