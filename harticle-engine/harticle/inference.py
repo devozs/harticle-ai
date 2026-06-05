@@ -144,7 +144,12 @@ def generate(loaded, prompt: str, params: dict) -> list:
     import torch
 
     tokenizer, model, device = loaded
-    encoded = tokenizer.encode(prompt, add_special_tokens=False, return_tensors="pt").to(device)
+    # Training wrapped every example as <bos>{text}<eos>, so the model only emits
+    # real content after a BOS — prompting with a bare string (no BOS) makes EOS
+    # the likeliest first token and generation stops immediately (empty output).
+    # Prepend BOS to match the training distribution.
+    bos = tokenizer.bos_token or ""
+    encoded = tokenizer.encode(bos + prompt, add_special_tokens=False, return_tensors="pt").to(device)
     input_ids = encoded if encoded.size()[-1] > 0 else None
     prompt_len = int(encoded.size()[-1])
     LOGGER.info("generate: prompt=%d token(s), max_length=%d num_return=%d temperature=%.2f",
@@ -165,10 +170,14 @@ def generate(loaded, prompt: str, params: dict) -> list:
 
     samples = []
     for i, out in enumerate(outputs):
-        full = tokenizer.decode(out, skip_special_tokens=True)
+        # Decode only the generated continuation (drop the echoed prompt tokens).
+        gen_ids = out[prompt_len:] if int(out.size()[-1]) > prompt_len else out
+        text = tokenizer.decode(gen_ids, skip_special_tokens=True)
         # Trim at the stop token if the tokenizer left it in.
-        cut = full.find(STOP_TOKEN)
-        text = full[:cut] if cut != -1 else full
+        cut = text.find(STOP_TOKEN)
+        if cut != -1:
+            text = text[:cut]
+        text = text.strip()
         LOGGER.info("generate: sample %d — %d generated token(s), %d char(s): %.80r",
                     i + 1, int(out.size()[-1]) - prompt_len, len(text), text)
         samples.append(text)
