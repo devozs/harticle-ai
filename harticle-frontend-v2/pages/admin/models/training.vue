@@ -180,6 +180,7 @@ function statusBadge(status: string) {
           <tr>
             <th class="px-4 py-3">Name</th>
             <th class="px-4 py-3">Base model</th>
+            <th class="px-4 py-3">Trained on</th>
             <th class="px-4 py-3">Type</th>
             <th class="px-4 py-3">Status</th>
             <th class="px-4 py-3">Progress</th>
@@ -197,6 +198,10 @@ function statusBadge(status: string) {
               >#{{ s.attemptNumber }}</span>
             </td>
             <td class="px-4 py-3 text-gray-600">{{ s.baseModel }}</td>
+            <td class="px-4 py-3 text-gray-600">
+              <span v-if="s.reporterName" class="rounded bg-violet-100 px-1.5 py-0.5 text-xs font-medium text-violet-700">{{ s.reporterName }}</span>
+              <span v-else class="text-xs text-gray-400">All reporters</span>
+            </td>
             <td class="px-4 py-3 text-gray-600">{{ s.requiredType }}</td>
             <td class="px-4 py-3">
               <span class="rounded px-2 py-0.5 text-xs font-medium" :class="statusBadge(s.status)">{{ s.status }}</span>
@@ -234,7 +239,7 @@ function statusBadge(status: string) {
             </td>
           </tr>
           <tr v-if="!sessions.length">
-            <td colspan="6" class="px-4 py-6 text-center text-sm text-gray-400">No training sessions yet.</td>
+            <td colspan="7" class="px-4 py-6 text-center text-sm text-gray-400">No training sessions yet.</td>
           </tr>
         </tbody>
       </table>

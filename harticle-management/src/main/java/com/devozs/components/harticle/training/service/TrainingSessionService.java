@@ -326,6 +326,18 @@ public class TrainingSessionService {
         if (!ref.startsWith("file://")) {
             return true;
         }
+        // A fetch-to-local uploads files one by one; config.json (small) lands early, so
+        // its mere presence is NOT proof of a complete model — a fetch that timed out
+        // mid-push leaves a partial dir with config.json but no weights. Only trust the
+        // probe when no fetch is in flight or failed: REQUESTED/UPLOADING aren't done yet,
+        // and FAILED means the partial bytes are unusable. (A native local-fs run never
+        // enters those states — its status stays NONE — so it's unaffected.)
+        ModelFetchStatus fetch = s.getModelFetchStatus();
+        if (fetch == ModelFetchStatus.REQUESTED
+                || fetch == ModelFetchStatus.UPLOADING
+                || fetch == ModelFetchStatus.FAILED) {
+            return false;
+        }
         return storageService.exists(modelKeyPrefix(s.getId()) + "/config.json");
     }
 

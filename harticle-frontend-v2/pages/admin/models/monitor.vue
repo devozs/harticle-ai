@@ -170,6 +170,8 @@ async function rerun() {
       <div class="rounded-2xl border border-gray-200 bg-white p-4 text-sm">
         <div class="text-xs text-gray-400">Assigned to</div>
         <div class="mt-1 text-gray-900">{{ monitor.assignedResourceName ?? '—' }}</div>
+        <div class="mt-2 text-xs text-gray-400">Trained on</div>
+        <div class="mt-1 text-gray-900">{{ monitor.reporterName ?? 'All reporters (general model)' }}</div>
         <div class="mt-2 text-xs text-gray-400">Activity</div>
         <div class="mt-1 text-gray-900">
           {{ monitor.secondsSinceActivity != null ? `${monitor.secondsSinceActivity}s ago` : '—' }}
