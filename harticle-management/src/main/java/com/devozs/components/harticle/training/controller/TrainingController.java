@@ -142,4 +142,15 @@ public class TrainingController {
     public TrainingSessionSummary rerunSession(@PathVariable UUID id) {
         return sessionService.toSummary(sessionService.rerun(id));
     }
+
+    /**
+     * Fetch a remotely-trained model's files down to the management host so it can
+     * be tested on LOCAL CPU. Flags the owning agent to push (it's outbound-only);
+     * the FE polls status to watch the fetch progress.
+     */
+    @PostMapping(TrainingURLS.SESSIONS + TrainingURLS.ID + TrainingURLS.FETCH_LOCAL)
+    @ResponseBody
+    public TrainingSessionSummary fetchModelLocal(@PathVariable UUID id) {
+        return sessionService.toSummary(sessionService.requestModelFetch(id));
+    }
 }

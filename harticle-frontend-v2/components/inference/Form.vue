@@ -35,6 +35,21 @@ function resourceLabel(r: ComputeResource): string {
 const selectedModel = computed(() =>
   props.models.find(m => m.sessionId === model.value.sourceSessionId))
 
+const isLocalTarget = computed(() => model.value.target === LOCAL)
+
+// LOCAL can only load models whose files are on the management host. When the
+// target is Local, hide models that aren't available locally (they must be
+// fetched first from the training screen, or run on their GPU/HPU box).
+const selectableModels = computed(() =>
+  isLocalTarget.value ? props.models.filter(m => m.availableLocal) : props.models)
+
+// If switching to Local invalidates the current pick, clear it so the user re-selects.
+watch(isLocalTarget, (local) => {
+  if (local && selectedModel.value && !selectedModel.value.availableLocal) {
+    model.value.sourceSessionId = undefined as unknown as string
+  }
+})
+
 watchEffect(() => {
   valid.value = !!model.value.sourceSessionId
     && !!model.value.target
@@ -48,13 +63,19 @@ watchEffect(() => {
       <span class="font-medium text-gray-700">Trained model</span>
       <select v-model="model.sourceSessionId" class="rounded-lg border border-gray-300 px-3 py-2">
         <option :value="undefined" disabled>
-          {{ models.length ? 'Select a completed model…' : 'No completed training runs yet' }}
+          {{ selectableModels.length
+            ? 'Select a completed model…'
+            : isLocalTarget ? 'No models available locally — fetch one first' : 'No completed training runs yet' }}
         </option>
-        <option v-for="m in models" :key="m.sessionId" :value="m.sessionId">
+        <option v-for="m in selectableModels" :key="m.sessionId" :value="m.sessionId">
           {{ m.name }} — {{ m.baseModel }}
         </option>
       </select>
       <span v-if="selectedModel" class="break-all text-xs text-gray-400">{{ selectedModel.outputModelRef }}</span>
+      <span v-if="isLocalTarget" class="text-xs text-gray-400">
+        Only models present on this host are shown. To test a model trained on a GPU/HPU box locally,
+        fetch it to local from the Training screen first.
+      </span>
     </label>
 
     <label class="flex flex-col gap-1 text-sm">

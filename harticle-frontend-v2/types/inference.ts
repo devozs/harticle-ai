@@ -9,6 +9,8 @@ export interface InferenceModelOption {
   name: string
   baseModel: string
   outputModelRef: string
+  /** Whether this model's files are reachable for LOCAL CPU inference. */
+  availableLocal: boolean
 }
 
 /** Create + submit request. target is 'LOCAL' or a compute resource id. */

@@ -20,4 +20,6 @@ public class InferenceModelOption {
     private String name;
     private String baseModel;
     private String outputModelRef;
+    /** Whether this model is reachable for LOCAL CPU inference on the mgmt host. */
+    private boolean availableLocal;
 }

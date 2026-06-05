@@ -223,7 +223,10 @@ ensure_engine_protos() {
 ensure_engine_venv() {
   local req_file=requirements-dev.txt
   if [ "$HARTICLE_ENGINE_STUB" = "0" ]; then
-    req_file=requirements.txt
+    # Real ML on the local CPU: the prod requirements.txt pins torch 1.12 /
+    # numpy 1.23 for python:3.8 and won't install on a modern dev venv. Use the
+    # slimmer infer set (CPU-only torch + transformers) instead.
+    req_file=requirements-infer.txt
   fi
   if [ ! -d "$ENGINE_DIR/.venv" ]; then
     echo "[run_dev] creating engine venv ($req_file)"

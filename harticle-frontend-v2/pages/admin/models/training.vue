@@ -29,6 +29,21 @@ watch(drawerOpen, (open) => {
 })
 onBeforeUnmount(() => { if (resourcePoll) clearInterval(resourcePoll) })
 
+// While any model fetch is in flight (REQUESTED/UPLOADING), poll the session list
+// so its status badge advances to AVAILABLE on its own without a manual refresh.
+let fetchPoll: ReturnType<typeof setInterval> | undefined
+const anyFetchInFlight = computed(() =>
+  store.sessions.some(s => s.modelFetchStatus === 'REQUESTED' || s.modelFetchStatus === 'UPLOADING'))
+watch(anyFetchInFlight, (inFlight) => {
+  if (inFlight && !fetchPoll) {
+    fetchPoll = setInterval(() => store.fetchSessions(), 4000)
+  } else if (!inFlight && fetchPoll) {
+    clearInterval(fetchPoll)
+    fetchPoll = undefined
+  }
+})
+onBeforeUnmount(() => { if (fetchPoll) clearInterval(fetchPoll) })
+
 function emptyDraft(): TrainingSessionDto {
   return {
     name: '',
@@ -93,6 +108,31 @@ async function rerun(session: TrainingSessionSummary) {
   } finally {
     rerunning.value = undefined
   }
+}
+
+// Fetch a remotely-trained model to the management host so it can be tested on
+// LOCAL CPU. The agent pushes on its next heartbeat; the list polls so the
+// status badge advances REQUESTED → UPLOADING → AVAILABLE on its own.
+const fetching = ref<string | undefined>()
+async function fetchLocal(session: TrainingSessionSummary) {
+  fetching.value = session.id
+  try {
+    await store.fetchModelLocal(session.id)
+  } catch (e) {
+    alert(String(e))
+  } finally {
+    fetching.value = undefined
+  }
+}
+
+// Show the fetch action only for a COMPLETED model that isn't already local and
+// isn't mid-fetch. A REQUESTED/UPLOADING run shows progress text instead.
+function fetchLabel(s: TrainingSessionSummary): string | undefined {
+  if (s.status !== 'COMPLETED' || !s.outputModelRef || s.modelAvailableLocal) return undefined
+  if (s.modelFetchStatus === 'REQUESTED') return 'Fetch queued…'
+  if (s.modelFetchStatus === 'UPLOADING') return 'Fetching…'
+  if (s.modelFetchStatus === 'FAILED') return 'Fetch failed — retry'
+  return 'Fetch to local'
 }
 
 function statusBadge(status: string) {
@@ -164,6 +204,19 @@ function statusBadge(status: string) {
                 title="Start a fresh attempt with the same config and dataset"
                 @click="rerun(s)"
               >{{ rerunning === s.id ? 'Re-running…' : 'Re-run' }}</button>
+              <button
+                v-if="fetchLabel(s)"
+                type="button"
+                class="ml-3 text-sm font-medium text-cyan-700 hover:underline disabled:opacity-40"
+                :disabled="fetching === s.id || s.modelFetchStatus === 'REQUESTED' || s.modelFetchStatus === 'UPLOADING'"
+                title="Copy this model's files to this host so it can be tested on Local (CPU)"
+                @click="fetchLocal(s)"
+              >{{ fetching === s.id ? 'Fetching…' : fetchLabel(s) }}</button>
+              <span
+                v-else-if="s.status === 'COMPLETED' && s.modelAvailableLocal"
+                class="ml-3 text-xs text-green-700"
+                title="Model files are on this host — testable on Local (CPU)"
+              >✓ Local</span>
               <button type="button" class="ml-3 text-sm text-gray-400 hover:text-red-600" @click="remove(s)">Delete</button>
             </td>
           </tr>

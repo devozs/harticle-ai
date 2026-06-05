@@ -89,6 +89,7 @@ public class InferenceService {
                         .name(s.getName())
                         .baseModel(s.getBaseModel())
                         .outputModelRef(s.getOutputModelRef())
+                        .availableLocal(sessionService.isModelAvailableLocally(s))
                         .build())
                 .toList();
     }
@@ -109,6 +110,13 @@ public class InferenceService {
         }
 
         boolean local = TARGET_LOCAL.equalsIgnoreCase(dto.getTarget());
+        // LOCAL can only load a model whose files are on THIS host. A file:// model
+        // trained on a remote box isn't reachable until it's been fetched to local;
+        // reject up front with a clear message instead of failing mid-generation.
+        if (local && !sessionService.isModelAvailableLocally(source)) {
+            throw new IllegalStateException(
+                    "this model is not available locally — fetch it to local storage first, or run it on the GPU/HPU resource that trained it");
+        }
         InferenceRun.InferenceRunBuilder<?, ?> builder = InferenceRun.builder()
                 .sourceSessionId(source.getId())
                 .modelRef(source.getOutputModelRef())

@@ -1,5 +1,6 @@
 package com.devozs.components.harticle.training.service;
 
+import com.devozs.components.harticle.training.domain.ModelFetchStatus;
 import com.devozs.components.harticle.training.domain.TrainingStatus;
 import com.devozs.components.harticle.training.dto.TrainingLogDto;
 import com.devozs.components.harticle.training.dto.TrainingSessionDto;
@@ -19,6 +20,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+import java.io.InputStream;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.UUID;
@@ -271,6 +273,89 @@ public class TrainingSessionService {
                 .toList();
     }
 
+    // --- fetch-to-local (bring a remote model's files onto the management host) ---
+
+    /** Storage key prefix the model files live under for a given session. */
+    public static String modelKeyPrefix(UUID sessionId) {
+        return "models/" + sessionId;
+    }
+
+    /**
+     * Is this session's model present in management's own storage (so LOCAL CPU
+     * inference can load it)? True for a model already written here (local-fs run,
+     * or one fetched), or any S3/hub ref the engine can resolve on its own. The
+     * presence probe ({@code config.json} under the model prefix) is authoritative
+     * and flips to true automatically once an agent finishes pushing.
+     */
+    public boolean isModelAvailableLocally(TrainingSession s) {
+        String ref = s.getOutputModelRef();
+        if (ref == null || ref.isBlank()) {
+            return false;
+        }
+        // s3:// and bare hub ids are resolvable from anywhere; only file:// is host-bound.
+        if (!ref.startsWith("file://")) {
+            return true;
+        }
+        return storageService.exists(modelKeyPrefix(s.getId()) + "/config.json");
+    }
+
+    /**
+     * Admin asks to bring a remotely-trained model's files down to this host. Since
+     * the agent is outbound-only, we flag the box that trained it; the agent sees
+     * the flag on its next heartbeat and pushes the files up. No-op if already local.
+     */
+    public TrainingSession requestModelFetch(UUID sessionId) {
+        TrainingSession session = get(sessionId);
+        if (session.getStatus() != TrainingStatus.COMPLETED
+                || session.getOutputModelRef() == null || session.getOutputModelRef().isBlank()) {
+            throw new IllegalStateException("only a COMPLETED session with a trained model can be fetched");
+        }
+        if (isModelAvailableLocally(session)) {
+            session.setModelFetchStatus(ModelFetchStatus.AVAILABLE);
+            return sessionRepository.save(session);
+        }
+        UUID resourceId = session.getAssignedResourceId();
+        if (resourceId == null) {
+            throw new IllegalStateException("session has no training box to fetch the model from");
+        }
+        ComputeResource resource = resourceRepository.findById(resourceId)
+                .orElseThrow(() -> new IllegalStateException("the box that trained this model is no longer registered"));
+        resource.setModelUploadSessionId(sessionId);
+        resourceRepository.save(resource);
+
+        session.setModelFetchStatus(ModelFetchStatus.REQUESTED);
+        appendLog(sessionId, "INFO", "model fetch-to-local requested; awaiting agent push from " + resource.getName());
+        return sessionRepository.save(session);
+    }
+
+    /** Write one pushed model file under {@code models/{sessionId}/{relPath}}. */
+    public void receiveModelFile(UUID sessionId, String relPath, InputStream data, long contentLength) {
+        String safeRel = relPath.replace("\\", "/").replaceAll("^/+", "");
+        if (safeRel.contains("..")) {
+            throw new IllegalArgumentException("illegal model file path: " + relPath);
+        }
+        TrainingSession session = get(sessionId);
+        if (session.getModelFetchStatus() != ModelFetchStatus.UPLOADING) {
+            session.setModelFetchStatus(ModelFetchStatus.UPLOADING);
+            sessionRepository.save(session);
+        }
+        storageService.write(modelKeyPrefix(sessionId) + "/" + safeRel, data, contentLength);
+    }
+
+    /** The agent finished (or failed) pushing the model; finalize + clear the flag. */
+    public void completeModelUpload(UUID sessionId, ComputeResource resource, boolean ok, String message) {
+        TrainingSession session = get(sessionId);
+        session.setModelFetchStatus(ok ? ModelFetchStatus.AVAILABLE : ModelFetchStatus.FAILED);
+        sessionRepository.save(session);
+        appendLog(sessionId, ok ? "INFO" : "WARN",
+                ok ? "model fetched to local storage" : "model fetch failed: " + message);
+        // Clear the pending request so the agent stops re-pushing on each heartbeat.
+        if (sessionId.equals(resource.getModelUploadSessionId())) {
+            resource.setModelUploadSessionId(null);
+            resourceRepository.save(resource);
+        }
+    }
+
     public List<TrainingLogDto> logs(UUID sessionId, long afterSeq) {
         return logRepository.findBySessionIdAndSeqGreaterThanOrderBySeqAsc(sessionId, afterSeq).stream()
                 .map(l -> TrainingLogDto.builder()
@@ -317,6 +402,8 @@ public class TrainingSessionService {
                 .attemptNumber(s.getAttemptNumber())
                 .pushToHub(s.isPushToHub())
                 .outputModelRef(s.getOutputModelRef())
+                .modelAvailableLocal(s.getStatus() == TrainingStatus.COMPLETED && isModelAvailableLocally(s))
+                .modelFetchStatus(s.getModelFetchStatus())
                 .errorMessage(s.getErrorMessage())
                 .errorType(s.getErrorType())
                 .createdAtEpochMs(s.getCreatedAt() == null ? null : s.getCreatedAt().getTime())

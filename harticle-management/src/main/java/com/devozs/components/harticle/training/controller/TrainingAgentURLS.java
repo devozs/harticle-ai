@@ -36,6 +36,13 @@ public final class TrainingAgentURLS {
     public static final String INFERENCE = "/inference";
     public static final String RESULT = "/result";
 
+    // model push (fetch-to-local): agent streams each file, then finalizes.
+    // under /sessions/{id}/model-file and /sessions/{id}/model-upload-complete
+    public static final String MODEL_FILE = "/model-file";
+    public static final String MODEL_UPLOAD_COMPLETE = "/model-upload-complete";
+    /** Header carrying each model file's path relative to the model dir root. */
+    public static final String REL_PATH_HEADER = "X-Rel-Path";
+
     public static final String ID = "/{id}";
 
     public static final String URL_PATTERN = "/" + URL + "/**";

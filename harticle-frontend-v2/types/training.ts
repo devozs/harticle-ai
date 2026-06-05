@@ -13,6 +13,8 @@ export type TrainingStatus =
   | 'COMPLETED'
   | 'FAILED'
 
+export type ModelFetchStatus = 'NONE' | 'REQUESTED' | 'UPLOADING' | 'AVAILABLE' | 'FAILED'
+
 interface BaseEntity {
   id: string
   version?: number
@@ -83,6 +85,10 @@ export interface TrainingSessionSummary {
   rerunnable: boolean
   pushToHub: boolean
   outputModelRef?: string
+  /** Whether this model's files are reachable for LOCAL CPU inference on the mgmt host. */
+  modelAvailableLocal: boolean
+  /** Progress of fetching a remote model's files to the mgmt host. */
+  modelFetchStatus: ModelFetchStatus
   parentSessionId?: string
   attemptNumber: number
   errorMessage?: string

@@ -101,4 +101,13 @@ public class ComputeResource extends BaseEntity {
      */
     @Column(name = "reverify_requested", nullable = false)
     private boolean reverifyRequested;
+
+    /**
+     * Admin asked this box to push a completed session's model up to management
+     * (so it can be tested on LOCAL CPU). The agent observes this in its heartbeat
+     * ack and uploads the model files; cleared once the push finishes. Mirrors
+     * {@link #reverifyRequested}. Null when nothing is pending.
+     */
+    @Column(name = "model_upload_session_id")
+    private UUID modelUploadSessionId;
 }

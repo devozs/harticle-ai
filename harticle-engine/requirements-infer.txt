@@ -1,0 +1,15 @@
+# LOCAL CPU inference deps for dev (HARTICLE_ENGINE_STUB=0).
+#
+# The legacy requirements.txt pins torch~=1.12.1 / numpy 1.23 etc. for the prod
+# image (python:3.8). Those have no wheels on a modern local venv (3.11/3.12), so
+# they silently fail to install and the engine crashes at `import torch`.
+#
+# This file carries only what harticle/inference.py needs, at versions that build
+# on current Python, with a CPU-only torch (no CUDA wheels). Prod requirements.txt
+# is intentionally left untouched.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.2
+transformers>=4.40
+tokenizers
+numpy>=1.26
+flask

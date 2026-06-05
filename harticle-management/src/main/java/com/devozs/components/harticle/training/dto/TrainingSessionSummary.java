@@ -2,6 +2,7 @@ package com.devozs.components.harticle.training.dto;
 
 import com.devozs.components.common.domain.ErrorType;
 import com.devozs.components.harticle.training.domain.ComputeResourceType;
+import com.devozs.components.harticle.training.domain.ModelFetchStatus;
 import com.devozs.components.harticle.training.domain.TrainingStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -43,6 +44,10 @@ public class TrainingSessionSummary {
     private boolean rerunnable;
     private boolean pushToHub;
     private String outputModelRef;
+    /** Whether this model's files are reachable for LOCAL CPU inference on the mgmt host. */
+    private boolean modelAvailableLocal;
+    /** Progress of bringing a remote model's files to the mgmt host (fetch-to-local). */
+    private ModelFetchStatus modelFetchStatus;
 
     /** The original run this is an attempt of (null for an original run). */
     private UUID parentSessionId;

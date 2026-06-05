@@ -57,6 +57,10 @@ export function useTrainingApi() {
   const rerunSession = (id: string) =>
     $fetch<TrainingSessionSummary>(`${base()}/sessions/${id}/rerun`, { method: 'POST' })
 
+  // Fetch a remotely-trained model's files down to the management host (for LOCAL inference).
+  const fetchModelLocal = (id: string) =>
+    $fetch<TrainingSessionSummary>(`${base()}/sessions/${id}/fetch-local`, { method: 'POST' })
+
   return {
     listResources,
     saveResource,
@@ -71,5 +75,6 @@ export function useTrainingApi() {
     stopSession,
     resumeSession,
     rerunSession,
+    fetchModelLocal,
   }
 }

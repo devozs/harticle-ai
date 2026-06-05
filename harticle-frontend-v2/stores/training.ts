@@ -116,6 +116,16 @@ export const useTrainingStore = defineStore('training', {
       return created
     },
 
+    // Fetch a remotely-trained model's files to the management host so it can be
+    // tested on LOCAL CPU. The agent pushes on its next heartbeat; poll the list
+    // so the status (REQUESTED → UPLOADING → AVAILABLE) updates as it progresses.
+    async fetchModelLocal(id: string) {
+      const { fetchModelLocal } = useTrainingApi()
+      const updated = await fetchModelLocal(id)
+      await this.fetchSessions()
+      return updated
+    },
+
     // --- monitor (single session live view) --------------------------------
     async fetchMonitor(id: string) {
       const { sessionStatus, sessionLogs } = useTrainingApi()

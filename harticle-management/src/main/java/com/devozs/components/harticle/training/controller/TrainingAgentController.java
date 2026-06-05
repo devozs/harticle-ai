@@ -13,6 +13,7 @@ import com.devozs.components.harticle.training.dto.ErrorReport;
 import com.devozs.components.harticle.training.dto.HeartbeatRequest;
 import com.devozs.components.harticle.training.dto.HeartbeatResponse;
 import com.devozs.components.harticle.training.dto.LogLine;
+import com.devozs.components.harticle.training.dto.ModelUploadResult;
 import com.devozs.components.harticle.training.dto.PreflightReport;
 import com.devozs.components.harticle.training.dto.ProgressAck;
 import com.devozs.components.harticle.training.dto.ProgressReport;
@@ -23,6 +24,7 @@ import com.devozs.components.harticle.training.service.DatasetExportService;
 import com.devozs.components.harticle.training.service.TrainingAgentService;
 import com.devozs.components.harticle.training.service.TrainingSessionService;
 import com.devozs.components.harticle.training.storage.StorageService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpStatus;
@@ -93,11 +95,18 @@ public class TrainingAgentController {
                                        @RequestBody HeartbeatRequest request) {
         ComputeResource resource = resolve(agentToken);
         resourceService.heartbeat(resource, request.getStatus());
-        return HeartbeatResponse.builder()
+        HeartbeatResponse.HeartbeatResponseBuilder ack = HeartbeatResponse.builder()
                 .ack(true)
                 .assignedSessionId(resource.getCurrentSessionId())
-                .reverifyRequested(resource.isReverifyRequested())
-                .build();
+                .reverifyRequested(resource.isReverifyRequested());
+        // Pending model push (fetch-to-local): tell the agent which session's model
+        // to upload and where it lives on its box (the session's file:// output ref).
+        UUID uploadId = resource.getModelUploadSessionId();
+        if (uploadId != null && sessionService.exists(uploadId)) {
+            ack.modelUploadSessionId(uploadId)
+               .modelUploadSourceUri(sessionService.get(uploadId).getOutputModelRef());
+        }
+        return ack.build();
     }
 
     /**
@@ -238,6 +247,37 @@ public class TrainingAgentController {
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_NDJSON)
                 .body(body);
+    }
+
+    /**
+     * Receive one file of a model the agent is pushing up (fetch-to-local). The
+     * agent streams each file with its path relative to the model dir in the
+     * {@code X-Rel-Path} header; we write it under {@code models/{sessionId}/{rel}}.
+     * Outbound-only safe: the agent initiates, management never dials the box.
+     */
+    @PostMapping(TrainingAgentURLS.SESSIONS + TrainingAgentURLS.ID + TrainingAgentURLS.MODEL_FILE)
+    public ResponseEntity<Void> modelFile(@RequestHeader(TrainingAgentURLS.TOKEN_HEADER) String agentToken,
+                                          @RequestHeader(TrainingAgentURLS.REL_PATH_HEADER) String relPath,
+                                          @PathVariable UUID id,
+                                          HttpServletRequest request) throws java.io.IOException {
+        ComputeResource resource = resolve(agentToken);
+        requireOwned(resource, id);
+        sessionService.receiveModelFile(id, relPath, request.getInputStream(), request.getContentLengthLong());
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * The agent has finished pushing all model files (or hit an error). Flips the
+     * session's fetch status and clears the upload request on the resource.
+     */
+    @PostMapping(TrainingAgentURLS.SESSIONS + TrainingAgentURLS.ID + TrainingAgentURLS.MODEL_UPLOAD_COMPLETE)
+    public ResponseEntity<Void> modelUploadComplete(@RequestHeader(TrainingAgentURLS.TOKEN_HEADER) String agentToken,
+                                                    @PathVariable UUID id,
+                                                    @RequestBody ModelUploadResult result) {
+        ComputeResource resource = resolve(agentToken);
+        requireOwned(resource, id);
+        sessionService.completeModelUpload(id, resource, result.isOk(), result.getMessage());
+        return ResponseEntity.noContent().build();
     }
 
     // --- auth helpers --------------------------------------------------------

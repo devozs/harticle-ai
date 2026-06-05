@@ -15,6 +15,8 @@ public final class TrainingURLS {
     public static final String RERUN = "/rerun";
     public static final String STATUS = "/status";
     public static final String LOGS = "/logs";
+    // admin-triggered fetch of a remote model's files to the management host (LOCAL inference)
+    public static final String FETCH_LOCAL = "/fetch-local";
 
     // resource enrollment-code (re)issue
     public static final String ENROLLMENT_CODE = "/enrollment-code";

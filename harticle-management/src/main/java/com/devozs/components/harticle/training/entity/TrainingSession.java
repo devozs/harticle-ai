@@ -3,6 +3,7 @@ package com.devozs.components.harticle.training.entity;
 import com.devozs.components.common.domain.ErrorType;
 import com.devozs.components.common.entity.BaseEntity;
 import com.devozs.components.harticle.training.domain.ComputeResourceType;
+import com.devozs.components.harticle.training.domain.ModelFetchStatus;
 import com.devozs.components.harticle.training.domain.TrainingStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -135,4 +136,14 @@ public class TrainingSession extends BaseEntity {
     @Column(name = "attempt_number", nullable = false)
     @lombok.Builder.Default
     private int attemptNumber = 1;
+
+    /**
+     * Progress of fetching this session's model from the (remote) training box down
+     * to the management host for LOCAL inference. {@code AVAILABLE} means the files
+     * live under {@code models/{id}/} here. See {@link ModelFetchStatus}.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "model_fetch_status", nullable = false, length = 16)
+    @lombok.Builder.Default
+    private ModelFetchStatus modelFetchStatus = ModelFetchStatus.NONE;
 }
