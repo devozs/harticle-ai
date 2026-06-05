@@ -156,7 +156,10 @@ public class InferenceService {
         long start = System.currentTimeMillis();
         run.setStatus(InferenceStatus.RUNNING);
         run.setStartedAt(new Date(start));
-        runRepository.save(run);
+        // Capture the merged (managed) copy: save() returns a new instance with the
+        // bumped @Version; the passed entity keeps the old one. finish() reloads
+        // anyway, but keep this correct for the in-flight reference.
+        run = runRepository.save(run);
         try {
             EngineInferRequest req = EngineInferRequest.builder()
                     .modelRef(run.getModelRef())
@@ -201,11 +204,14 @@ public class InferenceService {
         freeResource(run);
     }
 
-    private void finish(InferenceRun run, List<String> outputs, ErrorType errorType, String message) {
-        // The run may have been deleted while LOCAL @Async / GPU generation was in
-        // flight. Don't resurrect a deleted row — drop the late result.
-        if (!runRepository.existsById(run.getId())) {
-            log.info("inference run {} was deleted before its result arrived; dropping", run.getId());
+    private void finish(InferenceRun staleRun, List<String> outputs, ErrorType errorType, String message) {
+        // Reload fresh by id: the entity passed in was detached before a long
+        // generation (LOCAL @Async / GPU callback), so its @Version is stale and
+        // saving it directly throws OptimisticLockingFailure. Reloading also drops
+        // a late result for a run that was deleted mid-flight (findById empty).
+        InferenceRun run = runRepository.findById(staleRun.getId()).orElse(null);
+        if (run == null) {
+            log.info("inference run {} was deleted before its result arrived; dropping", staleRun.getId());
             return;
         }
         Date now = new Date();
