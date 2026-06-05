@@ -1,5 +1,6 @@
 package com.devozs.components.harticle.training.dto;
 
+import com.devozs.components.harticle.training.domain.JobKind;
 import com.devozs.components.harticle.training.domain.TrainingBackend;
 import com.devozs.components.harticle.training.domain.TrainingStatus;
 import lombok.AllArgsConstructor;
@@ -10,16 +11,23 @@ import lombok.NoArgsConstructor;
 import java.util.UUID;
 
 /**
- * The work unit returned by {@code /claim}: everything the agent needs to run (or
- * resume) one training session. Dataset/checkpoint are referenced by URI +
- * download URL so the agent pulls them directly from storage when possible.
+ * The work unit returned by {@code /claim}: everything the agent needs to run one
+ * job. {@link #kind} decides which fields matter — {@link JobKind#TRAIN} uses the
+ * dataset/hyperparams/checkpoint fields; {@link JobKind#INFER} uses
+ * {@link #modelRef}/{@link #prompt}/{@link #inferenceParams}. Both share the
+ * storage hints. {@link #sessionId} is the job id (a training_session id for
+ * TRAIN, an inference_run id for INFER).
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class AgentJobDto {
-    private UUID sessionId;
+    /** TRAIN (default, back-compat) or INFER. */
+    @Builder.Default
+    private JobKind kind = JobKind.TRAIN;
+
+    private UUID sessionId;                // job id: training_session id (TRAIN) or inference_run id (INFER)
     private TrainingStatus status;        // ASSIGNED (fresh) or carries RESUMING intent
     private TrainingBackend backend;      // CUDA | HPU | STUB
     private String baseModel;
@@ -37,8 +45,16 @@ public class AgentJobDto {
     // storage hints so the agent configures the right client for uploads
     private String storageKind;           // "local" | "s3"
     private String checkpointKeyPrefix;   // e.g. checkpoints/{sessionId}
-    private String modelKeyPrefix;        // e.g. models/{sessionId}
+    private String modelKeyPrefix;        // e.g. models/{sourceSessionId} for INFER
 
     // output
     private boolean pushToHub;
+
+    // --- inference (kind == INFER) ------------------------------------------
+    /** The trained model to load: storage URI and/or HF Hub repo id. */
+    private String modelRef;
+    /** The prompt to generate against. */
+    private String prompt;
+    /** Generation knobs as JSON: {@code {temperature, maxLength, numReturnSequences}}. */
+    private String inferenceParams;
 }

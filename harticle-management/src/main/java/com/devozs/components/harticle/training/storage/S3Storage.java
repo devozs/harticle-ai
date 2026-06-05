@@ -8,10 +8,15 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3Configuration;
+import software.amazon.awssdk.services.s3.model.Delete;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
+import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
@@ -19,6 +24,7 @@ import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignReques
 import java.io.InputStream;
 import java.net.URI;
 import java.time.Duration;
+import java.util.List;
 
 /**
  * S3-compatible storage (Nebius and friends). The efficiency win: the agent pulls
@@ -81,6 +87,28 @@ public class S3Storage implements StorageService {
     @Override
     public void delete(String key) {
         client.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(key).build());
+    }
+
+    @Override
+    public void deletePrefix(String keyPrefix) {
+        // List the prefix and delete in batches (S3 has no native "delete folder").
+        ListObjectsV2Request.Builder listReq = ListObjectsV2Request.builder()
+                .bucket(bucket).prefix(keyPrefix);
+        String continuation = null;
+        do {
+            ListObjectsV2Response page = client.listObjectsV2(
+                    listReq.continuationToken(continuation).build());
+            List<ObjectIdentifier> ids = page.contents().stream()
+                    .map(o -> ObjectIdentifier.builder().key(o.key()).build())
+                    .toList();
+            if (!ids.isEmpty()) {
+                client.deleteObjects(DeleteObjectsRequest.builder()
+                        .bucket(bucket)
+                        .delete(Delete.builder().objects(ids).build())
+                        .build());
+            }
+            continuation = Boolean.TRUE.equals(page.isTruncated()) ? page.nextContinuationToken() : null;
+        } while (continuation != null);
     }
 
     @Override

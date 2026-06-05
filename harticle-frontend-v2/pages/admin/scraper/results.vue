@@ -5,6 +5,7 @@ import type { ScrapedArticle } from '~/types/scraper'
 definePageMeta({ layout: 'admin', middleware: 'admin' })
 
 const store = useScraperStore()
+const { confirm } = useConfirm()
 const { sites, reporters, articles, runSummary, running, progress } = storeToRefs(store)
 
 type Scope = 'all' | 'site' | 'reporter'
@@ -83,7 +84,13 @@ async function run() {
 // Delete scraped articles in the chosen scope (independent of any run).
 async function deleteScraped() {
   if (!scopeReady.value) return
-  if (!confirm(`Delete all scraped articles for ${scopeLabel.value}? This cannot be undone.`)) return
+  const ok = await confirm({
+    title: `Delete all scraped articles for ${scopeLabel.value}?`,
+    message: 'This cannot be undone.',
+    confirmLabel: 'Delete',
+    tone: 'danger',
+  })
+  if (!ok) return
   note.value = ''
   const id = scope.value === 'site' ? runSiteId.value
     : scope.value === 'reporter' ? runReporterId.value

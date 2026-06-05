@@ -5,6 +5,7 @@ import type { ComputeResource, ComputeResourceDto, ComputeResourceType } from '~
 definePageMeta({ layout: 'admin', middleware: 'admin' })
 
 const store = useTrainingStore()
+const { confirm } = useConfirm()
 const { resources } = storeToRefs(store)
 const { apiBase } = useApi()
 
@@ -117,7 +118,13 @@ async function reverify(resource: ComputeResource) {
 }
 
 async function remove(resource: ComputeResource) {
-  if (!confirm(`Delete compute resource "${resource.name}"?`)) return
+  const ok = await confirm({
+    title: `Delete compute resource "${resource.name}"?`,
+    message: 'The agent will no longer be able to enroll or claim jobs with its current token.',
+    confirmLabel: 'Delete',
+    tone: 'danger',
+  })
+  if (!ok) return
   await store.deleteResource(resource.id)
 }
 

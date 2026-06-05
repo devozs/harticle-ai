@@ -5,6 +5,7 @@ import type { ScrapeReporter, ScrapeReporterDto } from '~/types/scraper'
 definePageMeta({ layout: 'admin', middleware: 'admin' })
 
 const store = useScraperStore()
+const { confirm } = useConfirm()
 const { sites, reporters, runSummary } = storeToRefs(store)
 
 const siteFilter = ref<string>('')
@@ -75,7 +76,12 @@ async function bulkAdd(dtos: ScrapeReporterDto[]) {
 }
 
 async function remove(reporter: ScrapeReporter) {
-  if (!confirm(`Delete reporter "${reporter.displayName}"?`)) return
+  const ok = await confirm({
+    title: `Delete reporter "${reporter.displayName}"?`,
+    confirmLabel: 'Delete',
+    tone: 'danger',
+  })
+  if (!ok) return
   await store.deleteReporter(reporter.id)
 }
 

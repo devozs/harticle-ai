@@ -1,6 +1,7 @@
 package com.devozs.components.harticle.config;
 
 import com.devozs.components.harticle.controller.ArticleBaseURLS;
+import com.devozs.components.harticle.inference.controller.InferenceURLS;
 import com.devozs.components.harticle.scraper.controller.ScraperURLS;
 import com.devozs.components.harticle.training.controller.TrainingAgentURLS;
 import com.devozs.components.harticle.training.controller.TrainingURLS;
@@ -39,7 +40,10 @@ public class SecurityConfig {
             // TrainingAgentController); admin/FE endpoints sit behind the FE
             // passphrase gate. Both permitAll at the Spring layer, like the scraper.
             TrainingAgentURLS.URL_PATTERN,
-            TrainingURLS.URL_PATTERN
+            TrainingURLS.URL_PATTERN,
+            // Inference test API; FE-gated like training, agent result callback
+            // lives under the training agent pattern above.
+            InferenceURLS.URL_PATTERN
     };
 
     public static final List<String> ORIGIN_PATTERNS = List.of(

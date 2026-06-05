@@ -1,5 +1,9 @@
 package com.devozs.components.harticle.training.controller;
 
+import com.devozs.components.harticle.inference.dto.InferenceResultReport;
+import com.devozs.components.harticle.inference.entity.InferenceRun;
+import com.devozs.components.harticle.inference.repository.InferenceRunRepository;
+import com.devozs.components.harticle.inference.service.InferenceService;
 import com.devozs.components.harticle.training.dto.AgentEnrollRequest;
 import com.devozs.components.harticle.training.dto.AgentEnrollResponse;
 import com.devozs.components.harticle.training.dto.AgentJobDto;
@@ -56,15 +60,21 @@ public class TrainingAgentController {
     private final TrainingAgentService agentService;
     private final TrainingSessionService sessionService;
     private final StorageService storageService;
+    private final InferenceService inferenceService;
+    private final InferenceRunRepository inferenceRunRepository;
 
     public TrainingAgentController(ComputeResourceService resourceService,
                                    TrainingAgentService agentService,
                                    TrainingSessionService sessionService,
-                                   StorageService storageService) {
+                                   StorageService storageService,
+                                   InferenceService inferenceService,
+                                   InferenceRunRepository inferenceRunRepository) {
         this.resourceService = resourceService;
         this.agentService = agentService;
         this.sessionService = sessionService;
         this.storageService = storageService;
+        this.inferenceService = inferenceService;
+        this.inferenceRunRepository = inferenceRunRepository;
     }
 
     // --- enrollment (code-authenticated, not token) --------------------------
@@ -119,6 +129,13 @@ public class TrainingAgentController {
                                 @PathVariable UUID id,
                                 @RequestBody ProgressReport report) {
         ComputeResource resource = resolve(agentToken);
+        // A deleted session is the cooperative kill signal: the row is gone, so we
+        // tell the agent to stop (instead of 500ing on the missing session, which it
+        // would swallow as non-fatal and keep training). The resource was already
+        // freed at delete time; nothing more to clean up here.
+        if (!sessionService.exists(id)) {
+            return ProgressAck.builder().stopRequested(true).build();
+        }
         TrainingSession session = requireOwned(resource, id);
         return agentService.recordProgress(session, report);
     }
@@ -157,6 +174,12 @@ public class TrainingAgentController {
     public ResponseEntity<Void> stopped(@RequestHeader(TrainingAgentURLS.TOKEN_HEADER) String agentToken,
                                         @PathVariable UUID id) {
         ComputeResource resource = resolve(agentToken);
+        // The agent may report stopped right after the session was deleted (the
+        // delete-as-kill path). Nothing to record — the row and its resource are
+        // already gone; ack cleanly instead of 500ing on a missing session.
+        if (!sessionService.exists(id)) {
+            return ResponseEntity.noContent().build();
+        }
         TrainingSession session = requireOwned(resource, id);
         agentService.stopped(session);
         return ResponseEntity.noContent().build();
@@ -167,8 +190,33 @@ public class TrainingAgentController {
                                       @PathVariable UUID id,
                                       @RequestBody ErrorReport report) {
         ComputeResource resource = resolve(agentToken);
+        // Likewise tolerate a deleted session (the agent's error report races the
+        // delete): the row is gone, so there's nothing to mark failed.
+        if (!sessionService.exists(id)) {
+            return ResponseEntity.noContent().build();
+        }
         TrainingSession session = requireOwned(resource, id);
         agentService.error(session, report);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Result of an inference job (GPU/HPU path). The agent loaded the trained model,
+     * generated against the prompt, and POSTs the samples here (or an error). Owned
+     * by the resource the run was assigned to.
+     */
+    @PostMapping(TrainingAgentURLS.INFERENCE + TrainingAgentURLS.ID + TrainingAgentURLS.RESULT)
+    public ResponseEntity<Void> inferenceResult(@RequestHeader(TrainingAgentURLS.TOKEN_HEADER) String agentToken,
+                                                @PathVariable UUID id,
+                                                @RequestBody InferenceResultReport report) {
+        ComputeResource resource = resolve(agentToken);
+        // The run may have been deleted while generation was in flight (delete-as-
+        // kill). Drop the late result instead of 401ing on the missing run.
+        if (!inferenceRunRepository.existsById(id)) {
+            return ResponseEntity.noContent().build();
+        }
+        InferenceRun run = requireOwnedInference(resource, id);
+        inferenceService.recordResult(run, report);
         return ResponseEntity.noContent().build();
     }
 
@@ -211,6 +259,16 @@ public class TrainingAgentController {
             throw new ResponseStatusBadCredentials("session " + sessionId + " is not assigned to this agent");
         }
         return session;
+    }
+
+    /** Ensure the resolved resource owns the inference run it's reporting on. */
+    private InferenceRun requireOwnedInference(ComputeResource resource, UUID runId) {
+        InferenceRun run = inferenceRunRepository.findById(runId)
+                .orElseThrow(() -> new ResponseStatusBadCredentials("inference run not found: " + runId));
+        if (!resource.getId().equals(run.getAssignedResourceId())) {
+            throw new ResponseStatusBadCredentials("inference run " + runId + " is not assigned to this agent");
+        }
+        return run;
     }
 
     private static String stripBearer(String header) {

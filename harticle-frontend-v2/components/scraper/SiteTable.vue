@@ -10,7 +10,8 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <table class="w-full border-collapse text-sm">
+  <div class="overflow-x-auto -mx-4 sm:mx-0">
+    <table class="w-full min-w-[40rem] border-collapse text-sm">
     <thead>
       <tr class="border-b border-gray-200 text-left text-gray-500">
         <th class="py-2 pr-3 font-medium">Name</th>
@@ -51,5 +52,6 @@ const emit = defineEmits<{
         <td colspan="5" class="py-6 text-center text-gray-400">No sites configured.</td>
       </tr>
     </tbody>
-  </table>
+    </table>
+  </div>
 </template>

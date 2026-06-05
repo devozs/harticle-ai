@@ -1,10 +1,14 @@
 package com.devozs.components.harticle.training.service;
 
 import com.devozs.components.common.domain.ErrorType;
+import com.devozs.components.harticle.inference.domain.InferenceStatus;
+import com.devozs.components.harticle.inference.entity.InferenceRun;
+import com.devozs.components.harticle.inference.repository.InferenceRunRepository;
 import com.devozs.components.harticle.training.config.TrainingProperties;
 import com.devozs.components.harticle.training.domain.ComputeResourceReadiness;
 import com.devozs.components.harticle.training.domain.ComputeResourceStatus;
 import com.devozs.components.harticle.training.domain.ComputeResourceType;
+import com.devozs.components.harticle.training.domain.JobKind;
 import com.devozs.components.harticle.training.domain.TrainingBackend;
 import com.devozs.components.harticle.training.domain.TrainingStatus;
 import com.devozs.components.harticle.training.dto.AgentJobDto;
@@ -41,19 +45,22 @@ public class TrainingAgentService {
     private final TrainingSessionService sessionService;
     private final StorageService storageService;
     private final TrainingProperties properties;
+    private final InferenceRunRepository inferenceRunRepository;
 
     public TrainingAgentService(TrainingSessionRepository sessionRepository,
                                 ComputeResourceRepository resourceRepository,
                                 ComputeResourceService resourceService,
                                 TrainingSessionService sessionService,
                                 StorageService storageService,
-                                TrainingProperties properties) {
+                                TrainingProperties properties,
+                                InferenceRunRepository inferenceRunRepository) {
         this.sessionRepository = sessionRepository;
         this.resourceRepository = resourceRepository;
         this.resourceService = resourceService;
         this.sessionService = sessionService;
         this.storageService = storageService;
         this.properties = properties;
+        this.inferenceRunRepository = inferenceRunRepository;
     }
 
     /**
@@ -68,6 +75,14 @@ public class TrainingAgentService {
             return Optional.empty();
         }
         ComputeResourceType type = resource.getType();
+
+        // Inference runs first: they're fast and rare, so favoring them keeps test
+        // latency low without meaningfully delaying the (long) training queue.
+        Optional<InferenceRun> inferRun = inferenceRunRepository.lockNextClaimable(type.name());
+        if (inferRun.isPresent()) {
+            return Optional.of(claimInference(inferRun.get(), resource));
+        }
+
         Optional<TrainingSession> picked = sessionRepository.lockNextClaimable(type.name());
         if (picked.isEmpty()) {
             return Optional.empty();
@@ -120,6 +135,35 @@ public class TrainingAgentService {
                 .checkpointKeyPrefix("checkpoints/" + session.getId())
                 .modelKeyPrefix("models/" + session.getId())
                 .pushToHub(session.isPushToHub())
+                .build();
+    }
+
+    /** Flip an inference run to ASSIGNED + bind the resource, and build its job. */
+    private AgentJobDto claimInference(InferenceRun run, ComputeResource resource) {
+        run.setStatus(InferenceStatus.ASSIGNED);
+        run.setAssignedResourceId(resource.getId());
+        run.setStartedAt(new Date());
+        inferenceRunRepository.save(run);
+
+        resource.setStatus(ComputeResourceStatus.BUSY);
+        resource.setCurrentSessionId(run.getId());
+        resource.setLastHeartbeat(new Date());
+        resourceRepository.save(resource);
+
+        TrainingBackend backend = switch (resource.getType()) {
+            case CUDA -> TrainingBackend.CUDA;
+            case HPU -> TrainingBackend.HPU;
+        };
+        return AgentJobDto.builder()
+                .kind(JobKind.INFER)
+                .sessionId(run.getId())
+                .backend(backend)
+                .modelRef(run.getModelRef())
+                .prompt(run.getPrompt())
+                .inferenceParams(run.getParams())
+                .storageKind(storageService.kind())
+                // the model lives under the SOURCE session's models/ prefix
+                .modelKeyPrefix("models/" + run.getSourceSessionId())
                 .build();
     }
 

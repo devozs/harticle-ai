@@ -4,12 +4,14 @@ import com.devozs.components.harticle.training.domain.TrainingStatus;
 import com.devozs.components.harticle.training.dto.TrainingLogDto;
 import com.devozs.components.harticle.training.dto.TrainingSessionDto;
 import com.devozs.components.harticle.training.dto.TrainingSessionSummary;
+import com.devozs.components.harticle.training.domain.ComputeResourceStatus;
 import com.devozs.components.harticle.training.entity.ComputeResource;
 import com.devozs.components.harticle.training.entity.TrainingLog;
 import com.devozs.components.harticle.training.entity.TrainingSession;
 import com.devozs.components.harticle.training.repository.ComputeResourceRepository;
 import com.devozs.components.harticle.training.repository.TrainingLogRepository;
 import com.devozs.components.harticle.training.repository.TrainingSessionRepository;
+import com.devozs.components.harticle.training.storage.StorageService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -35,17 +37,23 @@ public class TrainingSessionService {
     private final TrainingSessionRepository sessionRepository;
     private final TrainingLogRepository logRepository;
     private final ComputeResourceRepository resourceRepository;
+    private final ComputeResourceService resourceService;
     private final DatasetExportService datasetExportService;
+    private final StorageService storageService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public TrainingSessionService(TrainingSessionRepository sessionRepository,
                                   TrainingLogRepository logRepository,
                                   ComputeResourceRepository resourceRepository,
-                                  DatasetExportService datasetExportService) {
+                                  ComputeResourceService resourceService,
+                                  DatasetExportService datasetExportService,
+                                  StorageService storageService) {
         this.sessionRepository = sessionRepository;
         this.logRepository = logRepository;
         this.resourceRepository = resourceRepository;
+        this.resourceService = resourceService;
         this.datasetExportService = datasetExportService;
+        this.storageService = storageService;
     }
 
     public List<TrainingSession> getAll() {
@@ -55,6 +63,10 @@ public class TrainingSessionService {
     public TrainingSession get(UUID id) {
         return sessionRepository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("training session not found: " + id));
+    }
+
+    public boolean exists(UUID id) {
+        return sessionRepository.existsById(id);
     }
 
     /**
@@ -179,9 +191,62 @@ public class TrainingSessionService {
         return copy;
     }
 
+    /**
+     * Delete a session, freeing any compute it holds and removing all its
+     * artifacts (dataset, checkpoints, output model) along with its logs and row.
+     *
+     * <p>If the session is in-flight, deletion is also the kill switch. We can't
+     * reach into a remote, outbound-only agent to kill its process, so the abort is
+     * cooperative: the assigned resource is freed immediately (so it isn't left
+     * stuck BUSY), and the row is removed. At the agent's next progress tick the
+     * report comes back {@code stopRequested} (its session has vanished), so it
+     * halts the training loop instead of running to completion — see the GONE
+     * handling in {@code TrainingAgentController.progress}.
+     *
+     * <p>{@code @Transactional} is required: the derived {@code deleteBySessionId}
+     * bulk delete needs an active transaction (without one JPA throws
+     * TransactionRequiredException on the {@code remove}), and it keeps the
+     * log + session deletes atomic.
+     */
+    @org.springframework.transaction.annotation.Transactional
     public void delete(UUID id) {
+        TrainingSession session = sessionRepository.findById(id).orElse(null);
+        if (session != null) {
+            freeAssignedResource(session);
+            deleteArtifacts(session);
+        }
         logRepository.deleteBySessionId(id);
         sessionRepository.deleteById(id);
+    }
+
+    /** Free the compute resource this session is running on, if it still holds it. */
+    private void freeAssignedResource(TrainingSession session) {
+        if (session.getAssignedResourceId() == null) {
+            return;
+        }
+        resourceRepository.findById(session.getAssignedResourceId()).ifPresent(resource -> {
+            // Only reclaim the box if it's actually pinned to THIS session.
+            if (id(session).equals(resource.getCurrentSessionId())) {
+                resourceService.markIdle(resource);
+            }
+        });
+    }
+
+    /** Remove the session's dataset, checkpoints, and output model from storage. */
+    private void deleteArtifacts(TrainingSession session) {
+        UUID id = session.getId();
+        try {
+            storageService.delete(DatasetExportService.datasetKey(id));
+            storageService.deletePrefix("checkpoints/" + id + "/");
+            storageService.deletePrefix("models/" + id + "/");
+        } catch (Exception e) {
+            // Best-effort: a storage hiccup shouldn't block removing the DB row.
+            log.warn("could not fully delete artifacts for session {}", id, e);
+        }
+    }
+
+    private static UUID id(TrainingSession s) {
+        return s.getId();
     }
 
     // --- read-back -----------------------------------------------------------
@@ -192,6 +257,18 @@ public class TrainingSessionService {
 
     public List<TrainingSessionSummary> summaries() {
         return getAll().stream().map(this::toSummary).toList();
+    }
+
+    /**
+     * Sessions that produced a usable model — COMPLETED with a non-null
+     * {@code outputModelRef}. These are the only models the admin may test in the
+     * inference screen (a failed/running run has nothing to load).
+     */
+    public List<TrainingSession> completedModels() {
+        return getAll().stream()
+                .filter(s -> s.getStatus() == TrainingStatus.COMPLETED)
+                .filter(s -> s.getOutputModelRef() != null && !s.getOutputModelRef().isBlank())
+                .toList();
     }
 
     public List<TrainingLogDto> logs(UUID sessionId, long afterSeq) {

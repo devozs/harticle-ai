@@ -30,6 +30,15 @@ public interface StorageService {
     void delete(String key);
 
     /**
+     * Delete every object under {@code keyPrefix} (a logical "directory", e.g.
+     * {@code models/{id}/} or {@code checkpoints/{id}/}). On local-fs this removes
+     * the directory tree; on S3 it lists and batch-deletes the prefix. Idempotent:
+     * a missing prefix is a no-op. Used when a session/run is deleted and all its
+     * artifacts must go with it.
+     */
+    void deletePrefix(String keyPrefix);
+
+    /**
      * A time-boxed URL the agent can GET without management in the path. S3 returns
      * a presigned URL; local-fs returns a management-served HTTPS path (no real
      * presigning — the agent authenticates with its bearer token instead).

@@ -33,6 +33,11 @@ class AgentJob:
     checkpoint_key_prefix: str
     model_key_prefix: str
     push_to_hub: bool
+    kind: str = "TRAIN"               # TRAIN | INFER (default for back-compat)
+    # inference (kind == INFER)
+    model_ref: Optional[str] = None
+    prompt: Optional[str] = None
+    inference_params: str = "{}"      # JSON string
 
     @classmethod
     def from_json(cls, j: dict) -> "AgentJob":
@@ -51,6 +56,10 @@ class AgentJob:
             checkpoint_key_prefix=j.get("checkpointKeyPrefix") or "",
             model_key_prefix=j.get("modelKeyPrefix") or "",
             push_to_hub=bool(j.get("pushToHub")),
+            kind=j.get("kind") or "TRAIN",
+            model_ref=j.get("modelRef"),
+            prompt=j.get("prompt"),
+            inference_params=j.get("inferenceParams") or "{}",
         )
 
 
@@ -156,6 +165,16 @@ class ManagementClient:
         resp = self.session.post(
             self._agent(f"/sessions/{session_id}/error"),
             json={"errorType": error_type, "message": message},
+            headers=self._headers(), timeout=self.timeout,
+        )
+        resp.raise_for_status()
+
+    def report_inference_result(self, run_id: str, outputs=None,
+                                error_type: Optional[str] = None, message: Optional[str] = None) -> None:
+        """Report an inference job's result (GPU/HPU path) back to management."""
+        payload = {"outputs": outputs, "errorType": error_type, "message": message}
+        resp = self.session.post(
+            self._agent(f"/inference/{run_id}/result"), json=payload,
             headers=self._headers(), timeout=self.timeout,
         )
         resp.raise_for_status()

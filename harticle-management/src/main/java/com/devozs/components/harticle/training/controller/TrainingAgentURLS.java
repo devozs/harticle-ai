@@ -32,6 +32,10 @@ public final class TrainingAgentURLS {
     public static final String ERROR = "/error";
     public static final String DATASET = "/dataset";
 
+    // inference-run result callback (under /inference/{id}/result)
+    public static final String INFERENCE = "/inference";
+    public static final String RESULT = "/result";
+
     public static final String ID = "/{id}";
 
     public static final String URL_PATTERN = "/" + URL + "/**";
