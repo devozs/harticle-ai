@@ -159,6 +159,8 @@ public class TrainingAgentService {
                 .sessionId(run.getId())
                 .backend(backend)
                 .modelRef(run.getModelRef())
+                // tokenizer fallback when the model dir was published without one
+                .baseModel(run.getBaseModel())
                 .prompt(run.getPrompt())
                 .inferenceParams(run.getParams())
                 .storageKind(storageService.kind())
