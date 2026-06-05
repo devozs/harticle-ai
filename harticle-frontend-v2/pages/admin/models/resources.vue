@@ -17,11 +17,12 @@ const error = ref('')
 // One-time enrollment code shown after issue, with the right install+run snippet.
 const codeModal = ref<{ name: string, code: string, type: ComputeResourceType } | undefined>()
 
-// Management URL the agent should dial. Prefilled from the BE address the FE
-// itself uses, but EDITABLE: in dev that's localhost:8080 (wrong for a remote
-// box) and a Gaudi VM must point at the management VM's reachable address+port
-// (e.g. http://10.111.56.26/api). The snippet + sanity check below track this.
-const mgmtUrl = ref('')
+// Management URL the agent should dial. EDITABLE and remembered across visits
+// (localStorage): the FE's own apiBase is the browser-side address (localhost in
+// dev) which a remote Gaudi VM can't reach — the box needs the management VM's
+// LAN address+port (e.g. http://10.111.56.26/api). The FE can't know that LAN IP
+// on its own, so the admin sets it once and it sticks. Snippet + sanity check track it.
+const mgmtUrl = useLocalStorage('enroll.mgmtUrl', '')
 
 // Standalone GPU/HPU agent repo (project-neutral, reused across projects).
 const REPO_SSH = 'git@github.com:devozs/gpu-agent.git'
@@ -117,9 +118,9 @@ async function save() {
 
 async function enroll(resource: ComputeResource) {
   const res = await store.issueEnrollmentCode(resource.id)
-  // Prefill the management URL from the BE address the FE uses; the admin edits it
-  // to the box-reachable address (a remote VM can't reach a localhost default).
-  mgmtUrl.value = apiBase.value
+  // Seed from the BE address only if the admin hasn't set one before; a remembered
+  // box-reachable URL (e.g. http://10.111.56.26/api) persists across enrollments.
+  if (!mgmtUrl.value) mgmtUrl.value = apiBase.value
   codeModal.value = { name: resource.name, code: res.enrollmentCode, type: resource.type }
 }
 
