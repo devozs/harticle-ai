@@ -5,6 +5,7 @@ import type { TrainingSessionDto, TrainingSessionSummary } from '~/types/trainin
 definePageMeta({ layout: 'admin', middleware: 'admin' })
 
 const store = useTrainingStore()
+const { confirm } = useConfirm()
 const { sessions, resources } = storeToRefs(store)
 
 const drawerOpen = ref(false)
@@ -66,7 +67,16 @@ async function save() {
 }
 
 async function remove(session: TrainingSessionSummary) {
-  if (!confirm(`Delete training session "${session.name}"?`)) return
+  const running = ['ASSIGNED', 'RUNNING', 'RESUMING', 'STOP_REQUESTED'].includes(session.status)
+  const ok = await confirm({
+    title: `Delete training session "${session.name}"?`,
+    message: running
+      ? 'This session is in progress. Deleting it will stop the run on its compute resource and remove its dataset, checkpoints, and trained model. This cannot be undone.'
+      : 'This removes its dataset, checkpoints, trained model, and logs. This cannot be undone.',
+    confirmLabel: 'Delete',
+    tone: 'danger',
+  })
+  if (!ok) return
   await store.deleteSession(session.id)
 }
 
@@ -77,7 +87,7 @@ async function rerun(session: TrainingSessionSummary) {
   rerunning.value = session.id
   try {
     const created = await store.rerunSession(session.id)
-    if (created?.id) await navigateTo(`/admin/training/monitor?id=${created.id}`)
+    if (created?.id) await navigateTo(`/admin/models/monitor?id=${created.id}`)
   } catch (e) {
     alert(String(e))
   } finally {
@@ -116,7 +126,8 @@ function statusBadge(status: string) {
     </div>
 
     <div class="mt-4 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-      <table class="w-full text-left text-sm">
+      <div class="overflow-x-auto">
+      <table class="w-full min-w-[40rem] text-left text-sm">
         <thead class="bg-gray-50 text-xs uppercase text-gray-500">
           <tr>
             <th class="px-4 py-3">Name</th>
@@ -144,7 +155,7 @@ function statusBadge(status: string) {
             </td>
             <td class="px-4 py-3 text-gray-600">{{ s.progressPercent }}%</td>
             <td class="px-4 py-3 text-right">
-              <NuxtLink :to="`/admin/training/monitor?id=${s.id}`" class="text-sm font-medium text-cyan-700 hover:underline">Monitor</NuxtLink>
+              <NuxtLink :to="`/admin/models/monitor?id=${s.id}`" class="text-sm font-medium text-cyan-700 hover:underline">Monitor</NuxtLink>
               <button
                 v-if="s.rerunnable"
                 type="button"
@@ -161,6 +172,7 @@ function statusBadge(status: string) {
           </tr>
         </tbody>
       </table>
+      </div>
     </div>
 
     <!-- create drawer -->

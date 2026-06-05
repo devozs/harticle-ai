@@ -73,7 +73,7 @@ async function rerun() {
   busy.value = true
   try {
     const created = await store.rerunSession(sessionId.value)
-    if (created?.id) await navigateTo(`/admin/training/monitor?id=${created.id}`)
+    if (created?.id) await navigateTo(`/admin/models/monitor?id=${created.id}`)
   } catch (e) {
     alert(String(e))
   } finally {
@@ -135,7 +135,7 @@ async function rerun() {
         <NuxtLink
           v-for="a in chain"
           :key="a.id"
-          :to="`/admin/training/monitor?id=${a.id}`"
+          :to="`/admin/models/monitor?id=${a.id}`"
           class="flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs hover:bg-gray-50"
           :class="a.id === monitor?.id ? 'border-cyan-400 ring-1 ring-cyan-200' : 'border-gray-200'"
         >

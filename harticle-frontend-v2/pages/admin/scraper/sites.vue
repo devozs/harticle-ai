@@ -5,6 +5,7 @@ import type { ScrapeSite, ScrapeSiteDto } from '~/types/scraper'
 definePageMeta({ layout: 'admin', middleware: 'admin' })
 
 const store = useScraperStore()
+const { confirm } = useConfirm()
 const { sites, runSummary } = storeToRefs(store)
 
 const drawerOpen = ref(false)
@@ -58,12 +59,23 @@ async function save() {
 }
 
 async function remove(site: ScrapeSite) {
-  if (!confirm(`Delete site "${site.name}"? Its reporters and rules go with it.`)) return
+  const ok = await confirm({
+    title: `Delete site "${site.name}"?`,
+    message: 'Its reporters and rules go with it. This cannot be undone.',
+    confirmLabel: 'Delete',
+    tone: 'danger',
+  })
+  if (!ok) return
   await store.deleteSite(site.id)
 }
 
 async function runSite(site: ScrapeSite) {
-  if (!confirm(`Run a full scrape of all enabled reporters on "${site.name}"?`)) return
+  const ok = await confirm({
+    title: `Run a full scrape of "${site.name}"?`,
+    message: 'This scrapes all enabled reporters on this site.',
+    confirmLabel: 'Run scrape',
+  })
+  if (!ok) return
   await store.runSiteSync(site.id)
 }
 </script>

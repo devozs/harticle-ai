@@ -173,6 +173,44 @@ def hello():
     return "Hello Flask"
 
 
+@app.route('/engine/infer', methods=['POST'])
+def infer():
+    """Synchronous inference test, decoupled from the Kafka/article flow.
+
+    Loads a trained model (HF Hub repo id, or downloads from storage) and runs the
+    prompt through it on CPU (or GPU if present). Called by management for the
+    "Local (CPU, this deployment)" inference target. INTERNAL ONLY — never expose
+    on a public ingress (it loads arbitrary model refs).
+    """
+    from harticle import inference
+
+    body = request.get_json(force=True) or {}
+    model_ref = body.get("modelRef")
+    if not model_ref:
+        return {"error": "modelRef is required"}, 400
+    params = {
+        "temperature": body.get("temperature"),
+        "maxLength": body.get("maxLength"),
+        "numReturnSequences": body.get("numReturnSequences"),
+    }
+    try:
+        outputs = inference.run_inference(
+            model_ref,
+            body.get("prompt") or "",
+            params,
+            storage_kind=body.get("storageKind"),
+            model_key_prefix=body.get("modelKeyPrefix"),
+        )
+        device = "stub" if os.getenv("HARTICLE_ENGINE_STUB", "").strip() == "1" else None
+        if device is None:
+            import torch
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        return {"outputs": outputs, "device": device, "model": model_ref, "error": None}, 200
+    except Exception as e:
+        LOGGER.exception("inference failed for model %s", model_ref)
+        return {"outputs": None, "device": None, "model": model_ref, "error": str(e)}, 500
+
+
 @app.route('/engine/generate', methods=['POST'])
 def generate():
     if request.method == 'POST':

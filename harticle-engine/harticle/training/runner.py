@@ -21,6 +21,10 @@ LOGGER = logging.getLogger(__name__)
 
 
 def run_job(job, client, work_dir):
+    # Inference jobs are one-shot generate calls, not a training loop.
+    if getattr(job, "kind", "TRAIN") == "INFER":
+        return run_inference(job, client)
+
     session_dir = os.path.join(work_dir, job.session_id)
     output_dir = os.path.join(session_dir, "output")
     os.makedirs(output_dir, exist_ok=True)
@@ -87,3 +91,33 @@ def _publish_model(job, trainer, storage, output_dir, is_stub, client):
             client.report_log(job.session_id, "WARN", f"HF Hub push failed: {e}")
 
     return hub_ref or storage_ref
+
+
+def run_inference(job, client):
+    """Run a claimed INFER job: load the trained model, generate, report the result.
+
+    Handles its own errors and reports them via the inference result endpoint, so
+    the agent loop's training-oriented error path is never used for an inference
+    job. Returns normally either way (success or reported failure).
+    """
+    from harticle import inference
+
+    client.report_log(job.session_id, "INFO",
+                      f"running inference on {job.backend} backend (model={job.model_ref})")
+    try:
+        params = json.loads(job.inference_params or "{}")
+        outputs = inference.run_inference(
+            job.model_ref,
+            job.prompt or "",
+            params,
+            storage_kind=job.storage_kind,
+            model_key_prefix=job.model_key_prefix,
+        )
+        client.report_inference_result(job.session_id, outputs=outputs)
+        client.report_log(job.session_id, "INFO", f"inference produced {len(outputs)} sample(s)")
+    except Exception as e:
+        LOGGER.exception("inference run %s failed", job.session_id)
+        try:
+            client.report_inference_result(job.session_id, error_type="INTERNAL", message=str(e))
+        except Exception:
+            LOGGER.warning("could not report inference error", exc_info=True)

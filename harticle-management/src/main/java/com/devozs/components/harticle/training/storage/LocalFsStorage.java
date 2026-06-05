@@ -77,6 +77,26 @@ public class LocalFsStorage implements StorageService {
     }
 
     @Override
+    public void deletePrefix(String keyPrefix) {
+        Path dir = pathFor(keyPrefix);
+        if (!Files.exists(dir)) {
+            return;
+        }
+        try (var paths = Files.walk(dir)) {
+            // Deepest-first so directories are emptied before they're removed.
+            paths.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
+                try {
+                    Files.deleteIfExists(p);
+                } catch (IOException e) {
+                    throw new UncheckedIOException("failed to delete " + p, e);
+                }
+            });
+        } catch (IOException e) {
+            throw new UncheckedIOException("failed to delete prefix " + keyPrefix, e);
+        }
+    }
+
+    @Override
     public String presignGet(String key, Duration ttl) {
         // No real presigning on a filesystem. If a public base URL is configured
         // (management reachable over HTTPS), advertise that; otherwise the agent
