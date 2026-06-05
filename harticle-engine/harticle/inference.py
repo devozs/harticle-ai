@@ -178,8 +178,17 @@ def generate(loaded, prompt: str, params: dict) -> list:
         if cut != -1:
             text = text[:cut]
         text = text.strip()
+        gen_count = int(out.size()[-1]) - prompt_len
         LOGGER.info("generate: sample %d — %d generated token(s), %d char(s): %.80r",
-                    i + 1, int(out.size()[-1]) - prompt_len, len(text), text)
+                    i + 1, gen_count, len(text), text)
+        # A blank result is confusing in the UI. Surface a clear note explaining the
+        # likely cause (the model emitted only special tokens — usually an
+        # undertrained model, or a base model whose tokenizer can't represent the
+        # prompt's language, e.g. gpt2 on Hebrew).
+        if not text:
+            text = (f"(no decodable text — the model generated {gen_count} token(s) that "
+                    f"decoded to nothing; the base model is likely undertrained or its "
+                    f"tokenizer can't represent this prompt's language)")
         samples.append(text)
     return samples
 
