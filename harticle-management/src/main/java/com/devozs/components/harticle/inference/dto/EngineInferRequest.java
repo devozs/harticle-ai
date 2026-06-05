@@ -16,6 +16,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class EngineInferRequest {
     private String modelRef;
+    private String baseModel;         // tokenizer fallback when the model dir lacks one
     private String storageKind;       // "local" | "s3"
     private String modelKeyPrefix;    // e.g. models/{sourceSessionId}
     private String prompt;

@@ -7,6 +7,13 @@ from utils.data_kube_job_client import DataKubeJobClient
 from flask import Flask
 from flask import request
 
+# Configure a root handler so LOGGER.info/exception actually reach stdout — without
+# this the root logger defaults to WARNING with no handler and all app logs (e.g. the
+# /engine/infer trace) are silently dropped, leaving only werkzeug's request lines.
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
 LOGGER = logging.getLogger(__name__)
 
 # x = torch.rand(5, 3)
@@ -193,6 +200,8 @@ def infer():
         "maxLength": body.get("maxLength"),
         "numReturnSequences": body.get("numReturnSequences"),
     }
+    LOGGER.info("infer: model=%s base=%s prompt=%.60r params=%s",
+                model_ref, body.get("baseModel"), body.get("prompt") or "", params)
     try:
         outputs = inference.run_inference(
             model_ref,
@@ -200,11 +209,14 @@ def infer():
             params,
             storage_kind=body.get("storageKind"),
             model_key_prefix=body.get("modelKeyPrefix"),
+            base_model=body.get("baseModel"),
         )
         device = "stub" if os.getenv("HARTICLE_ENGINE_STUB", "").strip() == "1" else None
         if device is None:
             import torch
             device = "cuda" if torch.cuda.is_available() else "cpu"
+        LOGGER.info("infer: model=%s device=%s produced %d sample(s)",
+                    model_ref, device, len(outputs))
         return {"outputs": outputs, "device": device, "model": model_ref, "error": None}, 200
     except Exception as e:
         LOGGER.exception("inference failed for model %s", model_ref)

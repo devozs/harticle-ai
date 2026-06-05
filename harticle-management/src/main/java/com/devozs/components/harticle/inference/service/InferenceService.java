@@ -148,6 +148,7 @@ public class InferenceService {
         try {
             EngineInferRequest req = EngineInferRequest.builder()
                     .modelRef(run.getModelRef())
+                    .baseModel(run.getBaseModel())
                     .storageKind("local")
                     .modelKeyPrefix("models/" + run.getSourceSessionId())
                     .prompt(run.getPrompt())
