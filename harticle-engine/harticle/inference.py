@@ -146,6 +146,9 @@ def generate(loaded, prompt: str, params: dict) -> list:
     tokenizer, model, device = loaded
     encoded = tokenizer.encode(prompt, add_special_tokens=False, return_tensors="pt").to(device)
     input_ids = encoded if encoded.size()[-1] > 0 else None
+    prompt_len = int(encoded.size()[-1])
+    LOGGER.info("generate: prompt=%d token(s), max_length=%d num_return=%d temperature=%.2f",
+                prompt_len, max_length, num_return, temperature)
 
     eff_max = max_length
     if input_ids is not None:
@@ -161,12 +164,13 @@ def generate(loaded, prompt: str, params: dict) -> list:
         )
 
     samples = []
-    for out in outputs:
-        text = tokenizer.decode(out, skip_special_tokens=True)
+    for i, out in enumerate(outputs):
+        full = tokenizer.decode(out, skip_special_tokens=True)
         # Trim at the stop token if the tokenizer left it in.
-        cut = text.find(STOP_TOKEN)
-        if cut != -1:
-            text = text[:cut]
+        cut = full.find(STOP_TOKEN)
+        text = full[:cut] if cut != -1 else full
+        LOGGER.info("generate: sample %d — %d generated token(s), %d char(s): %.80r",
+                    i + 1, int(out.size()[-1]) - prompt_len, len(text), text)
         samples.append(text)
     return samples
 
