@@ -121,10 +121,10 @@ async function rerun(session: TrainingSessionSummary) {
 // LOCAL CPU. The agent pushes on its next heartbeat; the list polls so the
 // status badge advances REQUESTED → UPLOADING → AVAILABLE on its own.
 const fetching = ref<string | undefined>()
-async function fetchLocal(session: TrainingSessionSummary) {
+async function fetchLocal(session: TrainingSessionSummary, fromScratch = false) {
   fetching.value = session.id
   try {
-    await store.fetchModelLocal(session.id)
+    await store.fetchModelLocal(session.id, fromScratch)
   } catch (e) {
     alert(String(e))
   } finally {
@@ -132,18 +132,21 @@ async function fetchLocal(session: TrainingSessionSummary) {
   }
 }
 
-// Show the fetch action only for a COMPLETED model that isn't already local and
-// isn't mid-fetch. A REQUESTED/UPLOADING run shows progress text instead.
+// A model is fetchable when it's COMPLETED, not already local, and its box can still
+// serve the files: ORPHANED (box removed) and REMOTE_OFFLINE (box not heartbeating)
+// both show a status note instead of a fetch action.
+function canFetch(s: TrainingSessionSummary): boolean {
+  return s.status === 'COMPLETED' && !!s.outputModelRef && !s.modelAvailableLocal
+    && s.modelReachability !== 'ORPHANED' && s.modelReachability !== 'REMOTE_OFFLINE'
+}
+
+// Label for the single fetch button (the FAILED case is handled separately in the
+// template with explicit resume / from-scratch actions).
 function fetchLabel(s: TrainingSessionSummary): string | undefined {
-  if (s.status !== 'COMPLETED' || !s.outputModelRef || s.modelAvailableLocal) return undefined
-  // The files are gone with the training box — nothing to fetch (the server errors too).
-  if (s.modelReachability === 'ORPHANED') return undefined
-  // Box still registered but offline: a fetch can't start until it heartbeats again.
-  // Show a wait note (handled in the template) instead of a button that would just hang.
-  if (s.modelReachability === 'REMOTE_OFFLINE') return undefined
+  if (!canFetch(s)) return undefined
   if (s.modelFetchStatus === 'REQUESTED') return 'Fetch queued…'
   if (s.modelFetchStatus === 'UPLOADING') return 'Fetching…'
-  if (s.modelFetchStatus === 'FAILED') return 'Fetch failed — retry'
+  if (s.modelFetchStatus === 'FAILED') return undefined  // see the two-button template branch
   return 'Fetch to local'
 }
 
@@ -236,6 +239,26 @@ function statusBadge(status: string) {
                 class="ml-3 text-xs font-medium text-cyan-700"
                 title="Copying the model's files to this host"
               >{{ fetchProgressText(s) }}</span>
+              <!-- A failed fetch offers two retries: resume (keep what landed, re-send
+                   the rest) or from scratch (wipe + re-upload everything). -->
+              <template
+                v-else-if="canFetch(s) && s.modelFetchStatus === 'FAILED'"
+              >
+                <button
+                  type="button"
+                  class="ml-3 text-sm font-medium text-cyan-700 hover:underline disabled:opacity-40"
+                  :disabled="fetching === s.id"
+                  title="Resume: keep files already copied and re-send only the missing/incomplete ones"
+                  @click="fetchLocal(s, false)"
+                >{{ fetching === s.id ? 'Fetching…' : 'Resume fetch' }}</button>
+                <button
+                  type="button"
+                  class="ml-2 text-xs text-gray-400 hover:text-cyan-700 disabled:opacity-40"
+                  :disabled="fetching === s.id"
+                  title="From scratch: discard partial files and re-copy the whole model"
+                  @click="fetchLocal(s, true)"
+                >from scratch</button>
+              </template>
               <button
                 v-else-if="fetchLabel(s)"
                 type="button"

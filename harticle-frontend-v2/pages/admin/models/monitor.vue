@@ -46,6 +46,19 @@ const fetchPercent = computed(() => {
   return 0
 })
 
+const refetching = ref(false)
+async function refetch(fromScratch: boolean) {
+  if (!monitor.value) return
+  refetching.value = true
+  try {
+    await store.fetchModelLocal(monitor.value.id, fromScratch)
+  } catch (e) {
+    alert(String(e))
+  } finally {
+    refetching.value = false
+  }
+}
+
 function fetchStatusText(status?: string): string {
   switch (status) {
     case 'REQUESTED': return 'Queued — waiting for the training box to push'
@@ -230,6 +243,23 @@ async function rerun() {
         <span class="text-gray-400">from</span> {{ monitor.modelFetchSource ?? '—' }}
         <span class="text-gray-400">→</span> models/{{ monitor.id }}
       </p>
+      <!-- A failed fetch can resume (keep what landed) or restart from scratch. -->
+      <div v-if="monitor.modelFetchStatus === 'FAILED'" class="mt-3 flex gap-3">
+        <button
+          type="button"
+          class="rounded-lg bg-cyan-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-cyan-800 disabled:opacity-40"
+          :disabled="refetching"
+          title="Keep files already copied and re-send only the missing/incomplete ones"
+          @click="refetch(false)"
+        >{{ refetching ? 'Retrying…' : 'Resume fetch' }}</button>
+        <button
+          type="button"
+          class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+          :disabled="refetching"
+          title="Discard partial files and re-copy the whole model"
+          @click="refetch(true)"
+        >From scratch</button>
+      </div>
     </div>
 
     <!-- progress bar -->

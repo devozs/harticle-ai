@@ -27,6 +27,18 @@ public interface StorageService {
 
     boolean exists(String key);
 
+    /** Byte size of the stored object, or {@code -1} if it doesn't exist. Used by the
+     * resumable model fetch to tell whether a pushed file already landed completely. */
+    long size(String key);
+
+    /**
+     * Map of {@code relPath -> byteSize} for every object under {@code keyPrefix},
+     * keys relative to the prefix (e.g. {@code "config.json"}, {@code "model.safetensors"}).
+     * Empty when the prefix has nothing. Backs the resumable model fetch: the agent
+     * compares these sizes to its local files and re-sends only what's missing/partial.
+     */
+    java.util.Map<String, Long> listPrefixSizes(String keyPrefix);
+
     void delete(String key);
 
     /**

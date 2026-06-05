@@ -250,6 +250,20 @@ public class TrainingAgentController {
     }
 
     /**
+     * Manifest of model files management already holds for this session ({@code
+     * relPath -> byteSize}). The agent reads this before a (re)fetch and re-sends only
+     * the files that are missing or a different size, so an interrupted push resumes.
+     */
+    @GetMapping(TrainingAgentURLS.SESSIONS + TrainingAgentURLS.ID + TrainingAgentURLS.MODEL_MANIFEST)
+    @ResponseBody
+    public java.util.Map<String, Long> modelManifest(@RequestHeader(TrainingAgentURLS.TOKEN_HEADER) String agentToken,
+                                                      @PathVariable UUID id) {
+        ComputeResource resource = resolve(agentToken);
+        requireOwned(resource, id);
+        return sessionService.modelManifest(id);
+    }
+
+    /**
      * Receive one file of a model the agent is pushing up (fetch-to-local). The
      * agent streams each file with its path relative to the model dir in the
      * {@code X-Rel-Path} header; we write it under {@code models/{sessionId}/{rel}}.

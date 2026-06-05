@@ -85,6 +85,30 @@ public class S3Storage implements StorageService {
     }
 
     @Override
+    public long size(String key) {
+        try {
+            return client.headObject(HeadObjectRequest.builder().bucket(bucket).key(key).build())
+                    .contentLength();
+        } catch (NoSuchKeyException e) {
+            return -1L;
+        }
+    }
+
+    @Override
+    public java.util.Map<String, Long> listPrefixSizes(String keyPrefix) {
+        String prefix = keyPrefix.endsWith("/") ? keyPrefix : keyPrefix + "/";
+        java.util.Map<String, Long> out = new java.util.HashMap<>();
+        ListObjectsV2Request.Builder listReq = ListObjectsV2Request.builder().bucket(bucket).prefix(prefix);
+        String continuation = null;
+        do {
+            ListObjectsV2Response page = client.listObjectsV2(listReq.continuationToken(continuation).build());
+            page.contents().forEach(o -> out.put(o.key().substring(prefix.length()), o.size()));
+            continuation = Boolean.TRUE.equals(page.isTruncated()) ? page.nextContinuationToken() : null;
+        } while (continuation != null);
+        return out;
+    }
+
+    @Override
     public void delete(String key) {
         client.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(key).build());
     }

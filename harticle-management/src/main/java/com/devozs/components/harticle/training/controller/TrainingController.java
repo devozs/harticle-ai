@@ -150,7 +150,9 @@ public class TrainingController {
      */
     @PostMapping(TrainingURLS.SESSIONS + TrainingURLS.ID + TrainingURLS.FETCH_LOCAL)
     @ResponseBody
-    public TrainingSessionSummary fetchModelLocal(@PathVariable UUID id) {
-        return sessionService.toSummary(sessionService.requestModelFetch(id));
+    public TrainingSessionSummary fetchModelLocal(
+            @PathVariable UUID id,
+            @org.springframework.web.bind.annotation.RequestParam(value = "fromScratch", defaultValue = "false") boolean fromScratch) {
+        return sessionService.toSummary(sessionService.requestModelFetch(id, fromScratch));
     }
 }

@@ -314,6 +314,16 @@ public class TrainingSessionService {
     }
 
     /**
+     * Files management already holds for this session's model: {@code relPath -> size}.
+     * The agent diffs this against its local model dir on a (re)fetch and re-sends only
+     * what's missing or a different size — so a fetch interrupted mid-push resumes
+     * instead of starting over.
+     */
+    public java.util.Map<String, Long> modelManifest(UUID sessionId) {
+        return storageService.listPrefixSizes(modelKeyPrefix(sessionId));
+    }
+
+    /**
      * Is this session's model present in management's own storage (so LOCAL CPU
      * inference can load it)? True for a model already written here (local-fs run,
      * or one fetched), or any S3/hub ref the engine can resolve on its own. The
@@ -377,18 +387,31 @@ public class TrainingSessionService {
         return resourceService.isLive(box) ? ModelReachability.REMOTE_ONLY : ModelReachability.REMOTE_OFFLINE;
     }
 
+    /** Default fetch: resume — keep any already-pushed files and re-send only the rest. */
+    public TrainingSession requestModelFetch(UUID sessionId) {
+        return requestModelFetch(sessionId, false);
+    }
+
     /**
      * Admin asks to bring a remotely-trained model's files down to this host. Since
      * the agent is outbound-only, we flag the box that trained it; the agent sees
      * the flag on its next heartbeat and pushes the files up. No-op if already local.
+     *
+     * <p>{@code fromScratch} chooses the retry semantics after a partial/failed fetch:
+     * <ul>
+     *   <li>{@code false} (resume) — leave what's already under {@code models/{id}/};
+     *       the agent's manifest diff re-sends only missing/partial files.</li>
+     *   <li>{@code true} (from scratch) — wipe {@code models/{id}/} first so every file
+     *       is re-uploaded, for when you suspect the existing bytes are corrupt.</li>
+     * </ul>
      */
-    public TrainingSession requestModelFetch(UUID sessionId) {
+    public TrainingSession requestModelFetch(UUID sessionId, boolean fromScratch) {
         TrainingSession session = get(sessionId);
         if (session.getStatus() != TrainingStatus.COMPLETED
                 || session.getOutputModelRef() == null || session.getOutputModelRef().isBlank()) {
             throw new IllegalStateException("only a COMPLETED session with a trained model can be fetched");
         }
-        if (isModelAvailableLocally(session)) {
+        if (!fromScratch && isModelAvailableLocally(session)) {
             session.setModelFetchStatus(ModelFetchStatus.AVAILABLE);
             return sessionRepository.save(session);
         }
@@ -398,18 +421,27 @@ public class TrainingSessionService {
         }
         ComputeResource resource = resourceRepository.findById(resourceId)
                 .orElseThrow(() -> new IllegalStateException("the box that trained this model is no longer registered"));
+        if (fromScratch) {
+            // Drop any partial bytes so the agent re-sends every file from the top.
+            storageService.deletePrefix(modelKeyPrefix(sessionId) + "/");
+        }
         resource.setModelUploadSessionId(sessionId);
         resourceRepository.save(resource);
 
         session.setModelFetchStatus(ModelFetchStatus.REQUESTED);
-        // Reset any stale progress from a prior attempt; the source is the file:// dir
-        // on the training box. Totals get seeded by the agent's first uploaded file.
+        // Reset progress; the source is the file:// dir on the training box. The agent
+        // seeds totals from its pre-walk on the first upload. On a RESUME, files already
+        // present here won't be re-sent, so seed the done-counters from what we already
+        // hold — otherwise the bar would restart at 0 and undercount. (From-scratch just
+        // wiped the prefix above, so this counts nothing.)
         session.setModelFetchSource(session.getOutputModelRef());
+        var present = storageService.listPrefixSizes(modelKeyPrefix(sessionId));
         session.setModelFetchFilesTotal(null);
-        session.setModelFetchFilesDone(0);
+        session.setModelFetchFilesDone(present.size());
         session.setModelFetchBytesTotal(null);
-        session.setModelFetchBytesDone(0L);
-        appendLog(sessionId, "INFO", "model fetch-to-local requested; awaiting agent push from " + resource.getName());
+        session.setModelFetchBytesDone(present.values().stream().mapToLong(Long::longValue).sum());
+        appendLog(sessionId, "INFO", "model fetch-to-local requested (" + (fromScratch ? "from scratch" : "resume")
+                + "); awaiting agent push from " + resource.getName());
         return sessionRepository.save(session);
     }
 

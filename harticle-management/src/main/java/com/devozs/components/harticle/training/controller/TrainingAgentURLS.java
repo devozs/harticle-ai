@@ -40,6 +40,9 @@ public final class TrainingAgentURLS {
     // under /sessions/{id}/model-file and /sessions/{id}/model-upload-complete
     public static final String MODEL_FILE = "/model-file";
     public static final String MODEL_UPLOAD_COMPLETE = "/model-upload-complete";
+    /** Manifest of files management already holds (rel-path → size) so the agent can
+     * resume a fetch and skip files that already landed completely. */
+    public static final String MODEL_MANIFEST = "/model-manifest";
     /** Header carrying each model file's path relative to the model dir root. */
     public static final String REL_PATH_HEADER = "X-Rel-Path";
     /** Pre-walk totals (sent on every model file) so the UI can show a fetch fraction. */

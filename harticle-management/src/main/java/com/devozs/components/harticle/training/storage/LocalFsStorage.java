@@ -68,6 +68,37 @@ public class LocalFsStorage implements StorageService {
     }
 
     @Override
+    public long size(String key) {
+        Path p = pathFor(key);
+        try {
+            return Files.exists(p) ? Files.size(p) : -1L;
+        } catch (IOException e) {
+            return -1L;
+        }
+    }
+
+    @Override
+    public java.util.Map<String, Long> listPrefixSizes(String keyPrefix) {
+        Path dir = pathFor(keyPrefix);
+        java.util.Map<String, Long> out = new java.util.HashMap<>();
+        if (!Files.exists(dir)) {
+            return out;
+        }
+        try (var paths = Files.walk(dir)) {
+            paths.filter(Files::isRegularFile).forEach(p -> {
+                try {
+                    out.put(dir.relativize(p).toString().replace('\\', '/'), Files.size(p));
+                } catch (IOException e) {
+                    // skip a file we can't stat; the agent will just re-send it
+                }
+            });
+        } catch (IOException e) {
+            throw new UncheckedIOException("failed to list prefix " + keyPrefix, e);
+        }
+        return out;
+    }
+
+    @Override
     public void delete(String key) {
         try {
             Files.deleteIfExists(pathFor(key));
