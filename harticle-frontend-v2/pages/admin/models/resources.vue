@@ -6,8 +6,21 @@ definePageMeta({ layout: 'admin', middleware: 'admin' })
 
 const store = useTrainingStore()
 const { confirm } = useConfirm()
-const { resources } = storeToRefs(store)
+const { resources, sessions } = storeToRefs(store)
 const { apiBase } = useApi()
+
+// Which session (if any) each box is currently uploading the model for, keyed by
+// resource id. A fetch-to-local runs concurrently with a compute job, so we show
+// it on the card without disturbing the BUSY accelerator status.
+const pushingByResource = computed<Record<string, typeof sessions.value[number]>>(() => {
+  const map: Record<string, typeof sessions.value[number]> = {}
+  for (const s of sessions.value) {
+    if (s.modelFetchStatus === 'UPLOADING' && s.assignedResourceId) {
+      map[s.assignedResourceId] = s
+    }
+  }
+  return map
+})
 
 const drawerOpen = ref(false)
 const draft = ref<ComputeResourceDto>({ name: '', type: 'CUDA', enabled: true })
@@ -94,9 +107,10 @@ const sanityCheck = computed(() => {
 
 // Light poll so VERIFYING → READY (and heartbeat status) refresh live.
 let poll: ReturnType<typeof setInterval> | undefined
+const refresh = () => { store.fetchResources(); store.fetchSessions() }
 onMounted(() => {
-  store.fetchResources()
-  poll = setInterval(() => store.fetchResources(), 4000)
+  refresh()
+  poll = setInterval(refresh, 4000)
 })
 onBeforeUnmount(() => { if (poll) clearInterval(poll) })
 
@@ -189,6 +203,7 @@ function copy(text: string) {
         v-for="r in resources"
         :key="r.id"
         :resource="r"
+        :pushing-session="pushingByResource[r.id]"
         @enroll="enroll"
         @reverify="reverify"
         @rename="openRename"

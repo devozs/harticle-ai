@@ -1,7 +1,11 @@
 <script setup lang="ts">
-import type { ComputeResource } from '~/types/training'
+import type { ComputeResource, TrainingSessionSummary } from '~/types/training'
 
-const props = defineProps<{ resource: ComputeResource }>()
+// pushingSession: a session whose model this box is currently uploading
+// (fetch-to-local). It runs CONCURRENTLY with any compute job — a box can train
+// one session while pushing another's model — so we surface it separately from
+// the BUSY accelerator status.
+const props = defineProps<{ resource: ComputeResource, pushingSession?: TrainingSessionSummary }>()
 defineEmits<{
   (e: 'enroll', resource: ComputeResource): void
   (e: 'remove', resource: ComputeResource): void
@@ -57,6 +61,16 @@ const deviceName = computed<string | undefined>(() => {
   return c.deviceName ?? (Array.isArray(c.devices) ? c.devices[0]?.name : undefined)
 })
 
+// Live "pushing model" fraction for the badge, mirroring the monitor's text.
+const pushText = computed<string | undefined>(() => {
+  const s = props.pushingSession
+  if (!s || s.modelFetchStatus !== 'UPLOADING') return undefined
+  const files = s.modelFetchFilesTotal ? `${s.modelFetchFilesDone ?? 0}/${s.modelFetchFilesTotal} files` : ''
+  const mb = (b?: number) => Math.round((b ?? 0) / 1e6)
+  const bytes = s.modelFetchBytesTotal ? ` · ${mb(s.modelFetchBytesDone)}/${mb(s.modelFetchBytesTotal)} MB` : ''
+  return files ? `${files}${bytes}` : 'pushing…'
+})
+
 </script>
 
 <template>
@@ -80,6 +94,13 @@ const deviceName = computed<string | undefined>(() => {
             :class="readinessBadge"
             :title="resource.readinessDetail ?? ''"
           >{{ resource.readiness }}</span>
+          <!-- Concurrent fetch-to-local: shown alongside (not instead of) BUSY,
+               since a box can push one model while training another session. -->
+          <span
+            v-if="pushText"
+            class="rounded bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-800"
+            :title="pushingSession ? `pushing model for session ${pushingSession.id}` : ''"
+          >↑ {{ pushText }}</span>
         </div>
       </div>
       <div class="flex flex-wrap justify-end gap-2">
