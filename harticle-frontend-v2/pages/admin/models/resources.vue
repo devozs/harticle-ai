@@ -30,8 +30,16 @@ const error = ref('')
 const editingId = ref<string | undefined>()
 const nameValid = computed(() => !!draft.value.name && draft.value.name.trim().length > 0)
 
-// One-time enrollment code shown after issue, with the right install+run snippet.
-const codeModal = ref<{ name: string, code: string, type: ComputeResourceType } | undefined>()
+// Enroll modal state. `code` is undefined when the box is already enrolled and we
+// don't hold a freshly-issued plaintext code to show — reopening must NOT silently
+// mint a new one, because issuing resets enrollment and revokes the box's token.
+const codeModal = ref<{ id: string, name: string, code?: string, type: ComputeResourceType, enrolled: boolean } | undefined>()
+
+// Plaintext codes are returned by the backend ONCE (only the hash is stored), so
+// cache them in-memory per resource id. This lets the user reopen the modal — e.g.
+// to re-read the steps or copy the `--check-only` reminder — and see the SAME code
+// instead of triggering a fresh issue (which would de-enroll a working box).
+const issuedCodes = ref<Record<string, string>>({})
 
 // Management URL the agent should dial. EDITABLE and remembered across visits
 // (localStorage): the FE's own apiBase is the browser-side address (localhost in
@@ -65,10 +73,17 @@ const mgmtForSnippet = computed(() => {
   return v
 })
 
+// When the box is already enrolled we have no plaintext code to embed (it was
+// shown once at issue) — use a placeholder so the steps still read sensibly. The
+// already-enrolled box doesn't need a code at all: its token is cached and
+// `python -m devozs_gpu_agent` reuses it, ignoring ENROLL_CODE.
+const CODE_PLACEHOLDER = '<enrollment-code>'
+
 const enrollSnippet = computed(() => {
   const m = codeModal.value
   if (!m) return ''
   const mgmt = mgmtForSnippet.value
+  const code = m.code ?? CODE_PLACEHOLDER
   if (m.type === 'HPU') {
     return [
       '# On the Gaudi VM (bare metal — recommended over a container).',
@@ -80,7 +95,7 @@ const enrollSnippet = computed(() => {
       '#    = the app answered (good). "GATEWAY/PROXY ... HTTP 5xx" = a proxy is in',
       '#    the path (use the LAN IP / an .intel.com FQDN). "UNREACHABLE" = wrong',
       '#    URL or blocked port. Use the management host\'s LAN IP, not a bare name.',
-      `sudo ./deploy/bootstrap.sh --mgmt-url ${mgmt} --type HPU --enroll-code ${m.code}`,
+      `sudo ./deploy/bootstrap.sh --mgmt-url ${mgmt} --type HPU --enroll-code ${code}`,
       '#    Re-run the connectivity check alone any time (reads the env file):',
       './deploy/bootstrap.sh --check-only',
       '',
@@ -115,7 +130,7 @@ const enrollSnippet = computed(() => {
     '# works (empty body rejected); refused/timeout means wrong URL or blocked port.',
     `curl -sS -m 5 -o /dev/null -w 'HTTP %{http_code}\\n' ${mgmt.replace(/\/$/, '')}/training/agent/heartbeat -X POST -H 'Content-Type: application/json' -d '{}'`,
     '',
-    `ENROLL_CODE=${m.code} \\`,
+    `ENROLL_CODE=${code} \\`,
     `MGMT_URL=${mgmt} \\`,
     'AGENT_TYPE=CUDA \\',
     'python -m devozs_gpu_agent',
@@ -166,12 +181,42 @@ async function save() {
   }
 }
 
+// Open the enroll modal. NON-destructive: only issues a code when the box has
+// never enrolled AND we don't already hold one for it. For an already-enrolled
+// box (or one we've issued for this session) we just show the steps — the user
+// can explicitly re-issue from inside the modal if they really need a new code.
 async function enroll(resource: ComputeResource) {
-  const res = await store.issueEnrollmentCode(resource.id)
   // Seed from the BE address only if the admin hasn't set one before; a remembered
   // box-reachable URL (e.g. http://10.111.56.26/api) persists across enrollments.
   if (!mgmtUrl.value) mgmtUrl.value = apiBase.value
-  codeModal.value = { name: resource.name, code: res.enrollmentCode, type: resource.type }
+
+  let code = issuedCodes.value[resource.id]
+  if (!code && !resource.enrolled) {
+    const res = await store.issueEnrollmentCode(resource.id)
+    code = res.enrollmentCode
+    issuedCodes.value[resource.id] = code
+  }
+  codeModal.value = { id: resource.id, name: resource.name, code, type: resource.type, enrolled: resource.enrolled }
+}
+
+// Explicit, user-initiated re-issue (button inside the modal). This resets
+// enrollment server-side and revokes any existing token, so the box must enroll
+// again — hence it's gated behind a confirm and never happens on plain reopen.
+async function reissueCode() {
+  const m = codeModal.value
+  if (!m) return
+  if (m.enrolled) {
+    const ok = await confirm({
+      title: `Re-issue enrollment code for "${m.name}"?`,
+      message: 'This resets enrollment and revokes the box\'s current token — the agent will stop working until it re-enrolls with the new code. Only do this if the box never finished enrolling or you want to force a fresh enrollment.',
+      confirmLabel: 'Re-issue code',
+      tone: 'danger',
+    })
+    if (!ok) return
+  }
+  const res = await store.issueEnrollmentCode(m.id)
+  issuedCodes.value[m.id] = res.enrollmentCode
+  codeModal.value = { ...m, code: res.enrollmentCode, enrolled: false }
 }
 
 async function reverify(resource: ComputeResource) {
@@ -296,6 +341,15 @@ function copy(text: string) {
           run it with the code — it connects outbound, so no inbound access is needed.
         </p>
 
+        <!-- Already-enrolled banner: reopening the modal does NOT mint a new code
+             (that would revoke the box's token). The cached token is reused; only
+             an explicit Re-issue resets enrollment. -->
+        <div v-if="codeModal.enrolled" class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          This box is <span class="font-medium">already enrolled</span> — its token is cached and reused, so no code is needed to run the agent.
+          The steps below are for reference (e.g. re-running <span class="font-mono">bootstrap.sh --check-only</span>).
+          Use <span class="font-medium">Re-issue code</span> only to force a fresh enrollment — it revokes the current token until the box re-enrolls.
+        </div>
+
         <!-- Set the management URL the box must reach BEFORE the snippet so the
              admin fills it in first; step 1 (bootstrap.sh) writes it to the env
              file and sanity-checks reachability against it. -->
@@ -325,22 +379,38 @@ function copy(text: string) {
 
         <!-- Quick-copy the enrollment code on its own (no ENROLL_CODE= prefix) for
              a clean one-click copy. The management URL lives above the snippet so
-             it's set before the steps are copied. -->
+             it's set before the steps are copied. When we hold no plaintext code
+             (already-enrolled box), offer Re-issue instead of an empty field. -->
         <div class="mt-3">
           <label class="text-xs font-medium text-gray-500">Enrollment code</label>
           <div class="mt-1 flex">
             <input
+              v-if="codeModal.code"
               :value="enrollCodeVar"
               readonly
               class="w-full rounded-l-lg border border-gray-300 bg-gray-50 px-3 py-1.5 font-mono text-xs text-gray-800"
               @focus="(e) => (e.target as HTMLInputElement).select()"
             >
+            <input
+              v-else
+              value="(already enrolled — no code needed; Re-issue to force a fresh one)"
+              readonly
+              class="w-full rounded-l-lg border border-gray-300 bg-gray-50 px-3 py-1.5 font-mono text-xs italic text-gray-400"
+            >
             <button
+              v-if="codeModal.code"
               type="button"
-              class="rounded-r-lg border border-l-0 border-gray-300 px-3 py-1.5 text-xs text-cyan-800 hover:bg-cyan-50"
+              class="border border-l-0 border-gray-300 px-3 py-1.5 text-xs text-cyan-800 hover:bg-cyan-50"
               @click="copy(enrollCodeVar)"
             >
               Copy
+            </button>
+            <button
+              type="button"
+              class="rounded-r-lg border border-l-0 border-gray-300 px-3 py-1.5 text-xs text-amber-800 hover:bg-amber-50"
+              @click="reissueCode"
+            >
+              Re-issue
             </button>
           </div>
         </div>

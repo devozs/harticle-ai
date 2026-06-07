@@ -107,9 +107,10 @@ const pushText = computed<string | undefined>(() => {
         <button
           type="button"
           class="rounded-lg border border-cyan-300 px-2.5 py-1 text-xs font-medium text-cyan-800 hover:bg-cyan-50"
+          :title="resource.enrolled ? 'View setup steps (re-issue available inside)' : 'Get the enrollment code and setup steps'"
           @click="$emit('enroll', resource)"
         >
-          {{ resource.enrolled ? 'Re-issue code' : 'Enrollment code' }}
+          {{ resource.enrolled ? 'Setup steps' : 'Enrollment code' }}
         </button>
         <button
           type="button"
