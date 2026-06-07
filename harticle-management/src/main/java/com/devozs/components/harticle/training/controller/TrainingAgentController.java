@@ -39,6 +39,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.NoSuchElementException;
 import java.util.UUID;
 
 /**
@@ -84,7 +85,15 @@ public class TrainingAgentController {
     @PostMapping(TrainingAgentURLS.ENROLL)
     @ResponseBody
     public AgentEnrollResponse enroll(@RequestBody AgentEnrollRequest request) {
-        return resourceService.enroll(request);
+        // An invalid / already-used / revoked code surfaces as NoSuchElementException
+        // (and a blank code as IllegalArgumentException). Map both to 401 so the agent
+        // sees a clear "bad enrollment code" instead of an opaque 500 — the usual cause
+        // is a code that was rotated (re-issuing in the UI revokes the previous one).
+        try {
+            return resourceService.enroll(request);
+        } catch (NoSuchElementException | IllegalArgumentException e) {
+            throw new ResponseStatusBadCredentials(e.getMessage());
+        }
     }
 
     // --- liveness + claim ----------------------------------------------------
