@@ -400,14 +400,14 @@ function copy(text: string) {
             <button
               v-if="codeModal.code"
               type="button"
-              class="border border-l-0 border-gray-300 px-3 py-1.5 text-xs text-cyan-800 hover:bg-cyan-50"
+              class="whitespace-nowrap border border-l-0 border-gray-300 px-3 py-1.5 text-xs text-cyan-800 hover:bg-cyan-50"
               @click="copy(enrollCodeVar)"
             >
               Copy
             </button>
             <button
               type="button"
-              class="rounded-r-lg border border-l-0 border-gray-300 px-3 py-1.5 text-xs text-amber-800 hover:bg-amber-50"
+              class="whitespace-nowrap rounded-r-lg border border-l-0 border-gray-300 px-3 py-1.5 text-xs text-amber-800 hover:bg-amber-50"
               @click="reissueCode"
             >
               Re-issue
