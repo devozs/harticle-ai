@@ -48,44 +48,66 @@ const GIT_SRC = 'git+ssh://git@github.com/devozs/gpu-agent.git'
 // bundled setup-agent.sh (bare metal — the SynapseAI userspace must match the
 // host driver exactly, which a container can break with synStatus=26 at device
 // init) → install the agent into the Habana venv → run.
+//
+// Ordering matters: bootstrap.sh runs FIRST. It writes /etc/devozs-gpu-agent.env
+// (the single source of truth for MGMT_URL / AGENT_TYPE / ENROLL_CODE) and only
+// then sanity-checks that this box can actually reach the management URL — so the
+// reachability test runs against the real configured URL, and every later step
+// (foreground enroll, the systemd service) just reads that one env file.
+// The address the box dials. The FE's own apiBase is a browser-side default
+// (localhost in dev) that a remote box CANNOT reach, so if the admin hasn't set
+// a real URL we surface an obvious placeholder instead of a copy-paste that
+// silently contains `localhost` — forcing them to substitute the mgmt host.
+const MGMT_PLACEHOLDER = 'http://<management-host>/api'
+const mgmtForSnippet = computed(() => {
+  const v = mgmtUrl.value.trim()
+  if (!v || /\/\/(localhost|127\.0\.0\.1)\b/.test(v)) return MGMT_PLACEHOLDER
+  return v
+})
+
 const enrollSnippet = computed(() => {
   const m = codeModal.value
   if (!m) return ''
-  const mgmt = mgmtUrl.value || apiBase.value
+  const mgmt = mgmtForSnippet.value
   if (m.type === 'HPU') {
     return [
       '# On the Gaudi VM (bare metal — recommended over a container).',
       `git clone ${REPO_SSH}    # skip if already cloned`,
       'cd gpu-agent',
       '',
-      '# 1) Set up + verify the box: driver, Habana venv, MNIST smoke test.',
+      '# 1) Write the agent config to /etc/devozs-gpu-agent.env AND sanity-check',
+      '#    that this box can reach the management URL. A "REACHABLE — HTTP 400/401"',
+      '#    line means the path works; "UNREACHABLE" means a wrong URL / blocked port.',
+      `sudo ./deploy/bootstrap.sh --mgmt-url ${mgmt} --type HPU --enroll-code ${m.code}`,
+      '',
+      '# 2) Set up + verify the box: driver, Habana venv, MNIST smoke test.',
       '#    Add --with-hf to also verify the Hugging Face fine-tune path.',
       './setup-agent.sh',
       '',
-      '# 2) Install the agent INTO the Habana venv without disturbing its',
+      '# 3) Install the agent INTO the Habana venv without disturbing its',
       '#    matched torch, plus the deps a real job needs.',
       'source ~/habanalabs-venv/bin/activate',
       'pip install --no-deps -e .',
       "pip install 'datasets>=2.18' 'boto3>=1.34' optimum-habana",
       '',
-      '# 3) Enroll once (foreground) to cache the bearer token. PT_HPU_LAZY_MODE=1',
-      '#    keeps lazy mode (SynapseAI 1.24 defaults to eager). Ctrl+C once it',
-      '#    logs "agent up ... ready=True".',
-      'export PT_HPU_LAZY_MODE=1',
-      `ENROLL_CODE=${m.code} \\`,
-      `MGMT_URL=${mgmt} \\`,
-      'AGENT_TYPE=HPU \\',
+      '# 4) Enroll once (foreground) to cache the bearer token, reading the config',
+      '#    from step 1 (incl. PT_HPU_LAZY_MODE=1 — SynapseAI 1.24 defaults to',
+      '#    eager). Ctrl+C once it logs "agent up ... ready=True".',
+      'set -a; . /etc/devozs-gpu-agent.env; set +a',
       'python -m devozs_gpu_agent',
       '',
-      '# 4) Keep it running as a service (starts on boot, restarts on crash, and',
-      '#    stays claimable after you log out). The token is cached, so no code',
-      `#    needed. Set MGMT_URL=${mgmt} / AGENT_TYPE=HPU in the env file it installs.`,
+      '# 5) Keep it running as a service (starts on boot, restarts on crash, and',
+      '#    stays claimable after you log out). Reuses the env file from step 1.',
       './deploy/install-service.sh',
     ].join('\n')
   }
   return [
     '# On the GPU box (Python 3.10+, git SSH access to the repo):',
     `pip install 'devozs-gpu-agent[training,cuda] @ ${GIT_SRC}'`,
+    '',
+    '# Sanity-check reachability before enrolling: a 400/401 back means the URL',
+    '# works (empty body rejected); refused/timeout means wrong URL or blocked port.',
+    `curl -sS -m 5 -o /dev/null -w 'HTTP %{http_code}\\n' ${mgmt.replace(/\/$/, '')}/training/agent/heartbeat -X POST -H 'Content-Type: application/json' -d '{}'`,
     '',
     `ENROLL_CODE=${m.code} \\`,
     `MGMT_URL=${mgmt} \\`,
@@ -96,14 +118,6 @@ const enrollSnippet = computed(() => {
 
 // Just the bare code (no ENROLL_CODE= prefix) so it's a clean one-click copy.
 const enrollCodeVar = computed(() => codeModal.value?.code ?? '')
-
-// A reachability sanity check to paste on the box BEFORE enrolling: a 400/401 back
-// means the path works (server rejected the empty body); a connection refused /
-// timeout means the management URL/port is wrong or blocked.
-const sanityCheck = computed(() => {
-  const base = (mgmtUrl.value || apiBase.value).replace(/\/$/, '')
-  return `curl -sS -m 5 ${base}/training/agent/heartbeat -X POST -H 'Content-Type: application/json' -d '{}' ; echo`
-})
 
 // Light poll so VERIFYING → READY (and heartbeat status) refresh live.
 let poll: ReturnType<typeof setInterval> | undefined
@@ -275,58 +289,42 @@ function copy(text: string) {
           The code is shown <span class="font-medium">once</span>. On the box, install the agent then
           run it with the code — it connects outbound, so no inbound access is needed.
         </p>
-        <pre class="mt-3 overflow-auto rounded-lg bg-gray-900 p-4 text-xs leading-relaxed text-green-300">{{ enrollSnippet }}</pre>
 
-        <!-- Quick-copy individual bits. The management URL is EDITABLE — set it to
-             the address the box can reach (a remote VM can't use a localhost
-             default); the snippet + sanity check above/below update as you type. -->
-        <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <div>
-            <label class="text-xs font-medium text-gray-500">Enrollment code</label>
-            <div class="mt-1 flex">
-              <input
-                :value="enrollCodeVar"
-                readonly
-                class="w-full rounded-l-lg border border-gray-300 bg-gray-50 px-3 py-1.5 font-mono text-xs text-gray-800"
-                @focus="(e) => (e.target as HTMLInputElement).select()"
-              >
-              <button
-                type="button"
-                class="rounded-r-lg border border-l-0 border-gray-300 px-3 py-1.5 text-xs text-cyan-800 hover:bg-cyan-50"
-                @click="copy(enrollCodeVar)"
-              >
-                Copy
-              </button>
-            </div>
-          </div>
-          <div>
-            <label class="text-xs font-medium text-gray-500">Management URL (the box must reach this)</label>
-            <div class="mt-1 flex">
-              <input
-                v-model="mgmtUrl"
-                placeholder="http://10.111.56.26/api"
-                class="w-full rounded-l-lg border border-gray-300 bg-white px-3 py-1.5 font-mono text-xs text-gray-800 focus:border-cyan-500 focus:ring-cyan-500"
-                @focus="(e) => (e.target as HTMLInputElement).select()"
-              >
-              <button
-                type="button"
-                class="rounded-r-lg border border-l-0 border-gray-300 px-3 py-1.5 text-xs text-cyan-800 hover:bg-cyan-50"
-                @click="copy(mgmtUrl)"
-              >
-                Copy
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Reachability sanity check: run on the box BEFORE enrolling. -->
+        <!-- Set the management URL the box must reach BEFORE the snippet so the
+             admin fills it in first; step 1 (bootstrap.sh) writes it to the env
+             file and sanity-checks reachability against it. -->
         <div class="mt-3">
-          <label class="text-xs font-medium text-gray-500">
-            Sanity check (run on the box first — a 400/401 means reachable; refused/timeout means wrong URL or blocked port)
-          </label>
+          <label class="text-xs font-medium text-gray-500">Management URL (the box must reach this — set it before copying the steps)</label>
           <div class="mt-1 flex">
             <input
-              :value="sanityCheck"
+              v-model="mgmtUrl"
+              placeholder="http://10.111.56.26/api"
+              class="w-full rounded-l-lg border border-gray-300 bg-white px-3 py-1.5 font-mono text-xs text-gray-800 focus:border-cyan-500 focus:ring-cyan-500"
+              @focus="(e) => (e.target as HTMLInputElement).select()"
+            >
+            <button
+              type="button"
+              class="rounded-r-lg border border-l-0 border-gray-300 px-3 py-1.5 text-xs text-cyan-800 hover:bg-cyan-50"
+              @click="copy(mgmtUrl)"
+            >
+              Copy
+            </button>
+          </div>
+          <p class="mt-1 text-xs text-gray-400">
+            Step 1 (<span class="font-mono">bootstrap.sh</span>) sanity-checks this URL from the box: a 400/401 reply means reachable; refused/timeout means wrong URL or a blocked port (high ports like :18080 are often firewalled — prefer the :80 form that redirects to the app).
+          </p>
+        </div>
+
+        <pre class="mt-3 overflow-auto rounded-lg bg-gray-900 p-4 text-xs leading-relaxed text-green-300">{{ enrollSnippet }}</pre>
+
+        <!-- Quick-copy the enrollment code on its own (no ENROLL_CODE= prefix) for
+             a clean one-click copy. The management URL lives above the snippet so
+             it's set before the steps are copied. -->
+        <div class="mt-3">
+          <label class="text-xs font-medium text-gray-500">Enrollment code</label>
+          <div class="mt-1 flex">
+            <input
+              :value="enrollCodeVar"
               readonly
               class="w-full rounded-l-lg border border-gray-300 bg-gray-50 px-3 py-1.5 font-mono text-xs text-gray-800"
               @focus="(e) => (e.target as HTMLInputElement).select()"
@@ -334,7 +332,7 @@ function copy(text: string) {
             <button
               type="button"
               class="rounded-r-lg border border-l-0 border-gray-300 px-3 py-1.5 text-xs text-cyan-800 hover:bg-cyan-50"
-              @click="copy(sanityCheck)"
+              @click="copy(enrollCodeVar)"
             >
               Copy
             </button>
