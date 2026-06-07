@@ -287,7 +287,7 @@ function copy(text: string) {
     <!-- enrollment-code modal (shown once) -->
     <div v-if="codeModal" class="fixed inset-0 z-50 flex items-center justify-center p-4" @click.self="codeModal = undefined">
       <div class="absolute inset-0 bg-black/40" />
-      <div class="relative z-50 w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl">
+      <div class="relative z-50 flex max-h-[90vh] w-full max-w-2xl flex-col overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
         <h2 class="text-lg font-bold text-gray-900">Enroll {{ codeModal.name }} ({{ codeModal.type }})</h2>
         <p class="mt-1 text-sm text-gray-500">
           The code is shown <span class="font-medium">once</span>. On the box, install the agent then
