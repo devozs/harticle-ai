@@ -274,7 +274,7 @@ async function rerun() {
     <!-- log tail -->
     <div class="mt-4">
       <h2 class="text-sm font-semibold text-gray-700">Logs</h2>
-      <pre class="mt-2 h-80 overflow-auto rounded-2xl bg-gray-900 p-4 text-xs text-gray-100">
+      <pre class="mt-2 h-80 overflow-auto whitespace-pre rounded-2xl bg-gray-900 p-4 font-mono text-xs leading-relaxed text-gray-100">
 <template v-for="line in logs" :key="line.seq"><span :class="line.level === 'ERROR' ? 'text-red-400' : line.level === 'WARN' ? 'text-amber-300' : 'text-gray-300'">[{{ line.level }}] {{ line.message }}</span>
 </template><span v-if="!logs.length" class="text-gray-500">no log lines yet…</span></pre>
     </div>
