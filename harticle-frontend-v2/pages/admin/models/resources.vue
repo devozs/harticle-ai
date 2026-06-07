@@ -76,9 +76,13 @@ const enrollSnippet = computed(() => {
       'cd gpu-agent',
       '',
       '# 1) Write the agent config to /etc/devozs-gpu-agent.env AND sanity-check',
-      '#    that this box can reach the management URL. A "REACHABLE — HTTP 400/401"',
-      '#    line means the path works; "UNREACHABLE" means a wrong URL / blocked port.',
+      '#    that this box can reach the management URL. "REACHABLE — HTTP 400/401"',
+      '#    = the app answered (good). "GATEWAY/PROXY ... HTTP 5xx" = a proxy is in',
+      '#    the path (use the LAN IP / an .intel.com FQDN). "UNREACHABLE" = wrong',
+      '#    URL or blocked port. Use the management host\'s LAN IP, not a bare name.',
       `sudo ./deploy/bootstrap.sh --mgmt-url ${mgmt} --type HPU --enroll-code ${m.code}`,
+      '#    Re-run the connectivity check alone any time (reads the env file):',
+      './deploy/bootstrap.sh --check-only',
       '',
       '# 2) Set up + verify the box: driver, Habana venv, MNIST smoke test.',
       '#    Add --with-hf to also verify the Hugging Face fine-tune path.',
@@ -311,7 +315,7 @@ function copy(text: string) {
             </button>
           </div>
           <p class="mt-1 text-xs text-gray-400">
-            Step 1 (<span class="font-mono">bootstrap.sh</span>) sanity-checks this URL from the box: a 400/401 reply means reachable; refused/timeout means wrong URL or a blocked port (high ports like :18080 are often firewalled — prefer the :80 form that redirects to the app).
+            Use the management host's <span class="font-medium">LAN IP</span> (e.g. <span class="font-mono">http://10.111.56.26/api</span>) or an <span class="font-mono">.intel.com</span> FQDN — <span class="font-medium">not</span> a bare hostname, which gets routed through the DMZ proxy and fails. Step 1 (<span class="font-mono">bootstrap.sh</span>) sanity-checks it: <span class="font-mono">HTTP 400/401</span> = the app answered (good); <span class="font-mono">HTTP 5xx</span> = a proxy is in the path (use the LAN IP); refused/timeout = wrong URL or a blocked port (high ports like :18080 are often firewalled — prefer the :80 form).
           </p>
         </div>
 
