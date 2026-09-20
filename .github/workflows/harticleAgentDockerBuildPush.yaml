@@ -123,7 +123,7 @@ jobs:
           docker push ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ matrix.variant }}
           docker push ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ env.BUILD_ID }}
 
-      - name: Prune old GHCR build-id images (keep last 3 per variant)
+      - name: Prune old GHCR build-id images (keep last 2 per variant)
         if: ${{ success() && steps.gate.outputs.SKIP == 'false' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -133,11 +133,11 @@ jobs:
         run: |
           echo "Pruning build-id versions for ghcr.io/${OWNER}/${PACKAGE} (variant ${VARIANT})"
           # List versions whose tags include this variant's build-id prefix, newest first,
-          # and delete all but the most recent 3. The moving tag (cuda/gaudi) is never pruned.
+          # and delete all but the most recent 2. The moving tag (cuda/gaudi) is never pruned.
           versions=$(gh api -H "Accept: application/vnd.github+json" \
             /users/${OWNER}/packages/container/${PACKAGE}/versions \
             --paginate -q ".[] | select(any(.metadata.container.tags[]?; startswith(\"${VARIANT}-\"))) | .id")
-          keep=3
+          keep=2
           count=0
           for id in $versions; do
             count=$((count+1))

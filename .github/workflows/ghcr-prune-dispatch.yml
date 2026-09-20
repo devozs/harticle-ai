@@ -1,0 +1,50 @@
+name: Prune GHCR versions
+
+on:
+  workflow_dispatch:
+    inputs:
+      package_name:
+        description: Container package name
+        required: true
+        type: string
+      versions_to_keep:
+        description: Versions to keep (0 deletes the package)
+        required: true
+        type: string
+        default: '2'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prune package versions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          PACKAGE: ${{ inputs.package_name }}
+          KEEP: ${{ inputs.versions_to_keep }}
+        run: |
+          set -euo pipefail
+          echo "Fetching versions for ghcr.io/${OWNER}/${PACKAGE} (keep ${KEEP})"
+          versions=$(gh api -H "Accept: application/vnd.github+json" \
+            "/users/${OWNER}/packages/container/${PACKAGE}/versions" \
+            --paginate -q '.[].id')
+          if [ -z "${versions}" ]; then
+            echo "No versions found"
+            exit 0
+          fi
+          count=0
+          for id in $versions; do
+            count=$((count+1))
+            if [ "${KEEP}" != "0" ] && [ "$count" -le "$KEEP" ]; then
+              echo "Keeping ${id}"
+              continue
+            fi
+            echo "Deleting version id ${id}"
+            gh api --method DELETE -H "Accept: application/vnd.github+json" \
+              "/users/${OWNER}/packages/container/${PACKAGE}/versions/${id}"
+          done
